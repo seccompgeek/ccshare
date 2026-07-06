@@ -1,0 +1,1 @@
+savedcmd_Module.symvers :=  /home/martin/workspace/kdir-6.16-guest/usr/src/linux-headers-6.16.0-snp-guest-038d61fd6422/scripts/mod/modpost -M -m -b  -a      -o Module.symvers -T modules.order -i /home/martin/workspace/kdir-6.16-guest/usr/src/linux-headers-6.16.0-snp-guest-038d61fd6422/Module.symvers -e 

@@ -1,0 +1,1 @@
+savedcmd_sev_gpu_manager.ko := ld -r -m elf_x86_64 -z noexecstack --build-id=sha1  -T /home/martin/workspace/kdir-6.16-guest/usr/src/linux-headers-6.16.0-snp-guest-038d61fd6422/scripts/module.lds -o sev_gpu_manager.ko sev_gpu_manager.o sev_gpu_manager.mod.o .module-common.o

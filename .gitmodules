@@ -1,0 +1,3 @@
+[submodule "nvidia-driver"]
+	path = nvidia-driver
+	url = git@github.com:seccompgeek/nvidia-driver.git

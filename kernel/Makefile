@@ -1,24 +1,80 @@
-obj-m += sev_gpu_manager.o
+# sev_gpu multi-file module build.
+# As each cluster is extracted, add its .o here. Order doesn't matter for the
+# link, but every extracted .c must be listed or its symbols go undefined.
+obj-m += sev_gpu.o
+sev_gpu-objs := \
+	sev_gpu_manager.o \
+	sev_gpu_crypto.o \
+	sev_gpu_kmb.o \
+	sev_gpu_handshake.o \
+	sev_gpu_xport_ivshmem.o \
+	sev_gpu_client_mmap.o \
+	sev_gpu_client_rm.o \
+	sev_gpu_manager_exec.o \
+	sev_gpu_manager_sched.o \
+	sev_gpu_bringup.o \
+	sev_gpu_chardev.o \
+	sev_gpu_manager_mmap.o
+#	sev_gpu_comm.o          # (pending) RPC framing/layout
+#	sev_gpu_kmb.o \
+	sev_gpu_handshake.o \
+	sev_gpu_xport_ivshmem.o \
+	sev_gpu_client_mmap.o \
+	sev_gpu_client_rm.o \
+	sev_gpu_manager_exec.o \
+	sev_gpu_manager_sched.o \
+	sev_gpu_bringup.o \
+	sev_gpu_chardev.o \
+	sev_gpu_manager_mmap.o           # (pending) KMB seal/install/send/recv
+#	sev_gpu_handshake.o \
+	sev_gpu_xport_ivshmem.o \
+	sev_gpu_client_mmap.o \
+	sev_gpu_client_rm.o \
+	sev_gpu_manager_exec.o \
+	sev_gpu_manager_sched.o \
+	sev_gpu_bringup.o \
+	sev_gpu_chardev.o \
+	sev_gpu_manager_mmap.o     # (pending) ECDHE-PSK exchange + comm key
+#	sev_gpu_xport_ivshmem.o \
+	sev_gpu_client_mmap.o \
+	sev_gpu_client_rm.o \
+	sev_gpu_manager_exec.o \
+	sev_gpu_manager_sched.o \
+	sev_gpu_bringup.o \
+	sev_gpu_chardev.o \
+	sev_gpu_manager_mmap.o # (pending) transport backend (swap point)
+#	sev_gpu_manager_sched.o \
+	sev_gpu_bringup.o \
+	sev_gpu_chardev.o \
+	sev_gpu_manager_mmap.o # (pending)
+#	sev_gpu_manager_exec.o \
+	sev_gpu_manager_sched.o \
+	sev_gpu_bringup.o \
+	sev_gpu_chardev.o \
+	sev_gpu_manager_mmap.o  # (pending)
+#	sev_gpu_manager_nvidia.o# (pending)
+#	sev_gpu_bringup.o \
+	sev_gpu_chardev.o \
+	sev_gpu_manager_mmap.o       # (pending)
+#	sev_gpu_client_rm.o \
+	sev_gpu_manager_exec.o \
+	sev_gpu_manager_sched.o \
+	sev_gpu_bringup.o \
+	sev_gpu_chardev.o \
+	sev_gpu_manager_mmap.o     # (pending)
+#	sev_gpu_client_mmap.o \
+	sev_gpu_client_rm.o \
+	sev_gpu_manager_exec.o \
+	sev_gpu_manager_sched.o \
+	sev_gpu_bringup.o \
+	sev_gpu_chardev.o \
+	sev_gpu_manager_mmap.o   # (pending)
+#	sev_gpu_client_gpu.o    # (pending)
+#	sev_gpu_ioctl.o         # (pending)
 
-# Build against the pinned 6.16 SNP-guest headers vendored under sev-changes/
-# (extracted from linux-headers-6.16.0-snp-guest...deb) when present, so the
-# host's running kernel doesn't dictate the target. Override with `make KDIR=...`.
-GUEST_KDIR := $(wildcard $(CURDIR)/../kdir-6.16-guest/usr/src/linux-headers-*)
-ifeq ($(GUEST_KDIR),)
 KDIR ?= /lib/modules/$(shell uname -r)/build
-else
-KDIR ?= $(GUEST_KDIR)
-endif
-PWD := $(shell pwd)
-
+ccflags-y := -I$(src)
 all:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
-
 clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean
-
-install:
-	$(MAKE) -C $(KDIR) M=$(PWD) modules_install
-
-help:
-	$(MAKE) -C $(KDIR) M=$(PWD) help

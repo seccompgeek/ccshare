@@ -16,15 +16,6 @@
 
 /* Maximum number of client VMs supported */
 #define SEV_GPU_MAX_VMS 8
-#define SEV_GPU_MAX_CHANNELS_PER_VM 32
-#define SEV_GPU_CC_POOL_MAX 32
-#define RPC_FWD_ERR 0x0000ffffu  /* transport failure (NV_ERR_GENERIC-like) */
-#define SHMEM_MAGIC 0xDEADBEEFCAFEBABEULL
-#define SEV_GPU_BRINGUP_MAX_CAND 32u
-#define SEV_GPU_CHAN_KIND_CE 0
-#define SEV_GPU_CHAN_KIND_COMPUTE 1
-#define RPC_IDLE_POLL_MS 50
-#define SEV_GPU_BRINGUP_POLL_MS 2u
 
 /*
  * Shared memory layout (within the ivshmem BAR2 region).
@@ -46,12 +37,28 @@
  *   BAR1 = MSI-X table
  *   BAR2 = shared memory region (cross-VM)
  */
-/*
- * Transport (ivshmem) definitions moved to sev_gpu_transport.h — the swap
- * boundary. IVSHMEM_*, SEV_GPU_MANAGER_PEER_ID, and the transport interface
- * now live there. See sev_gpu_transport.h.
- */
-#include "sev_gpu_transport.h"
+#define IVSHMEM_VENDOR_ID 0x1af4
+#define IVSHMEM_DEVICE_ID 0x1110
+
+/* ivshmem BAR0 register offsets */
+#define IVSHMEM_REG_INTRMASK   0x00  /* legacy INTx mask   (RW) */
+#define IVSHMEM_REG_INTRSTATUS 0x04  /* legacy INTx status (RW) */
+#define IVSHMEM_REG_IVPOSITION 0x08  /* this peer's ID     (RO) */
+#define IVSHMEM_REG_DOORBELL   0x0C  /* ring a peer        (WO) */
+
+/* Doorbell value = (peer_id << 16) | vector */
+#define IVSHMEM_DOORBELL_VALUE(peer, vector) \
+    (((uint32_t)((peer) & 0xffff) << 16) | ((vector) & 0xffff))
+
+/* MSI-X vector semantics (doorbell) */
+#define IVSHMEM_VECTOR_NEW_REQUEST 0  /* client -> manager: request queued   */
+#define IVSHMEM_VECTOR_GRANT_READY 1  /* manager -> client: grant available  */
+#define IVSHMEM_VECTOR_RELEASE     2  /* client -> manager: GPU released     */
+#define IVSHMEM_VECTOR_RPC         3  /* RM-RPC mailbox kick (client<->mgr)  */
+#define IVSHMEM_NUM_VECTORS        4
+
+/* The manager is peer 0 by convention */
+#define SEV_GPU_MANAGER_PEER_ID 0
 
 /* Message types */
 #define GPU_REQ_TIME        0x01

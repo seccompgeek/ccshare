@@ -194,15 +194,4 @@ typedef struct {
     uint32_t hVASpace;  /* [IN]  FERMI_VASPACE_A handle on manager (hDma for NVOS46)*/
 } __attribute__((packed)) sev_gpu_rpc_uvm_map_dma_t;
 
-typedef int __sev_gpu_rpc_h_pad;
-
-/* RPC nested-buffer descriptor + layout policy (impl in sev_gpu_main.c comm). */
-struct rpc_nested {
-	u32 ptr_off;
-	u32 size;
-	u32 dir;
-};
-int rpc_nested_layout(u32 cmd, const void *arg, u32 arg_size,
-		      struct rpc_nested out[SEV_GPU_RPC_MAX_BUFFERS]);
-
 #endif /* SEV_GPU_RPC_H */

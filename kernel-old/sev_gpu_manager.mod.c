@@ -18,6 +18,8 @@ __section(".gnu.linkonce.this_module") = {
 
 static const struct modversion_info ____versions[]
 __used __section("__versions") = {
+	{ 0xd0760fc0, "kfree_sensitive" },
+	{ 0x25974000, "wait_for_completion" },
 	{ 0x7f02188f, "__msecs_to_jiffies" },
 	{ 0x15ba50a6, "jiffies" },
 	{ 0x59c538d8, "const_current_task" },
@@ -43,6 +45,7 @@ __used __section("__versions") = {
 	{ 0x49c18995, "device_create" },
 	{ 0x6199763b, "cdev_del" },
 	{ 0x670ecece, "__x86_indirect_thunk_rbx" },
+	{ 0x6383b27c, "__x86_indirect_thunk_rdx" },
 	{ 0xe26f86c1, "hrtimer_setup" },
 	{ 0x10afea97, "hrtimer_start_range_ns" },
 	{ 0x476b8042, "pci_free_irq_vectors" },
@@ -64,8 +67,8 @@ __used __section("__versions") = {
 	{ 0x6cf5af0d, "hrtimer_cancel" },
 	{ 0x9166fc03, "__flush_workqueue" },
 	{ 0x26bd6ae2, "kthread_stop" },
-	{ 0x55385e2e, "__x86_indirect_thunk_r14" },
 	{ 0x56470118, "__warn_printk" },
+	{ 0x2d3385d3, "system_wq" },
 	{ 0x5a44f8cb, "__crypto_memneq" },
 	{ 0x41ed3709, "get_random_bytes" },
 	{ 0xb6db1a2a, "__kvmalloc_node_noprof" },
@@ -80,6 +83,7 @@ __used __section("__versions") = {
 	{ 0x2cf56265, "__dynamic_pr_debug" },
 	{ 0xcc5005fe, "msleep_interruptible" },
 	{ 0xf90a1e85, "__x86_indirect_thunk_r8" },
+	{ 0x1a79c8e9, "__x86_indirect_thunk_r13" },
 	{ 0x34db050b, "_raw_spin_lock_irqsave" },
 	{ 0xd35cce70, "_raw_spin_unlock_irqrestore" },
 	{ 0x01000e51, "schedule" },
@@ -92,12 +96,8 @@ __used __section("__versions") = {
 	{ 0xbdfb6dbb, "__fentry__" },
 	{ 0x122c3a7e, "_printk" },
 	{ 0xdc50aae2, "__ref_stack_chk_guard" },
-	{ 0x868784cb, "__symbol_get" },
-	{ 0x6383b27c, "__x86_indirect_thunk_rdx" },
-	{ 0x6e9dd606, "__symbol_put" },
-	{ 0x65487097, "__x86_indirect_thunk_rax" },
-	{ 0xf0fdf6cb, "__stack_chk_fail" },
 	{ 0x7d628444, "memcpy_fromio" },
+	{ 0xf0fdf6cb, "__stack_chk_fail" },
 	{ 0xb9e7429c, "memcpy_toio" },
 	{ 0xe3ec2f2b, "alloc_chrdev_region" },
 	{ 0x2eb86a89, "class_create" },
@@ -117,7 +117,12 @@ __used __section("__versions") = {
 	{ 0x7049d055, "filp_open" },
 	{ 0xbdfc2a5e, "kernel_read" },
 	{ 0xef921b1c, "filp_close" },
+	{ 0x03c12dfe, "cancel_work_sync" },
 	{ 0x3290d737, "pci_unregister_driver" },
+	{ 0x868784cb, "__symbol_get" },
+	{ 0x0362f9a8, "__x86_indirect_thunk_r12" },
+	{ 0x6e9dd606, "__symbol_put" },
+	{ 0x65487097, "__x86_indirect_thunk_rax" },
 	{ 0xe2964344, "__wake_up" },
 	{ 0xc5b6f236, "queue_work_on" },
 	{ 0x8be87f86, "pci_irq_vector" },
@@ -132,7 +137,6 @@ __used __section("__versions") = {
 	{ 0x19dee613, "__fortify_panic" },
 	{ 0x4a453f53, "iowrite32" },
 	{ 0xfcec0987, "enable_irq" },
-	{ 0x1a79c8e9, "__x86_indirect_thunk_r13" },
 	{ 0xbcecb152, "hrtimer_forward" },
 	{ 0xb43f9365, "ktime_get" },
 	{ 0x608741b5, "__init_swait_queue_head" },
@@ -141,8 +145,6 @@ __used __section("__versions") = {
 	{ 0x6a5cc518, "__kmalloc_noprof" },
 	{ 0x43babd19, "sg_init_one" },
 	{ 0x0a8e458b, "crypto_req_done" },
-	{ 0xd0760fc0, "kfree_sensitive" },
-	{ 0x25974000, "wait_for_completion" },
 	{ 0x32bc4077, "module_layout" },
 };
 
@@ -150,4 +152,4 @@ MODULE_INFO(depends, "");
 
 MODULE_ALIAS("pci:v00001AF4d00001110sv*sd*bc*sc*i*");
 
-MODULE_INFO(srcversion, "DC139EEAB767FE0498D56CD");
+MODULE_INFO(srcversion, "5B91F1F35830618BC8EF133");

@@ -121,6 +121,8 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
+    printf("[*] CudaMalloc worked fine, ptr %p\n", (void *)d_out);
+
     const uint32_t threads = 256;
     const uint32_t blocks  = (n + threads - 1) / threads;
     fill_kernel<<<blocks, threads>>>(d_out, n);

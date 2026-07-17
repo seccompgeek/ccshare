@@ -111,6 +111,34 @@ void __iomem *grant_slot(struct sev_gpu_dev *d, u8 vm);
 void mgr_irq_mask(struct sev_gpu_dev *d);
 void mgr_irq_unmask(struct sev_gpu_dev *d);
 void cli_irq_rearm(struct sev_gpu_dev *d);
+
+/* ==================================================================== *
+ *  Channel backend (sev_gpu_xport_channel.c) — extra symbols the main
+ *  probe path calls when the sev-channel device (1af4:10f1) is selected.
+ *  These have no ivshmem equivalent (ivshmem used a shared device +
+ *  IVPosition; the channel binds one instance per client, keyed by the
+ *  static vm-id in chan_devs[]).
+ * ==================================================================== */
+#include <linux/interrupt.h>   /* irqreturn_t */
+#include <linux/pci.h>         /* struct pci_device_id */
+
+/* Per-client device-instance table, indexed by static vm-id. */
+extern struct sev_gpu_dev *chan_devs[];
+
+/* ---- sev-channel device identity (1af4:10f1), shared by probe + backend ---- */
+#define SEV_CH_VENDOR_ID       0x1AF4
+#define SEV_CH_DEVICE_ID       0x10F1
+#define SEV_CH_BAR_REGS_SIZE   0x1000
+
+/* Single-vector MSI handler (replaces the 4-vector ivshmem handler). */
+irqreturn_t sev_gpu_channel_irq(int irq, void *data);
+
+/* Read identity from BAR0, cross-check doorbell offset, register instance. */
+int  sev_gpu_channel_probe_identity(struct sev_gpu_dev *d);
+void sev_gpu_channel_remove_identity(struct sev_gpu_dev *d);
+
+/* PCI id table for the channel device. */
+extern const struct pci_device_id sev_gpu_channel_ids[];
 #endif /* __ASSEMBLY__ */
 
 #endif /* SEV_GPU_TRANSPORT_H */

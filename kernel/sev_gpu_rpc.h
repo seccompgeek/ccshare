@@ -141,6 +141,31 @@ typedef struct {
  * client's isolated data region. Both peers map it; the C-bit is already
  * cleared on this region so plain stores are mutually visible.
  */
+/*
+ * Phase A mmap-context reply (A0). KIND mirrors the native classification the
+ * driver would compute from access_start (IS_REG/IS_FB/IS_UD): the manager,
+ * which ran the real RM, tells the client which kind this mapping is so the
+ * client can build a matching context. mm_caching uses the NVOS33 caching enum
+ * (see nvos.h); mm_prot uses NV_PROTECT_* (bit0=read, bit1=write).
+ */
+#define SEV_GPU_MM_KIND_NONE      0u
+#define SEV_GPU_MM_KIND_DOORBELL  1u   /* HOPPER_USERMODE_A doorbell (UD aperture) */
+#define SEV_GPU_MM_KIND_USERD     2u   /* channel USERD                            */
+#define SEV_GPU_MM_KIND_GPFIFO    3u   /* GPFIFO ring                              */
+#define SEV_GPU_MM_KIND_PUSHBUF   4u   /* pushbuffer                               */
+#define SEV_GPU_MM_KIND_OSDESC    5u   /* os-described sysmem                       */
+#define SEV_GPU_MM_KIND_PARAMS    6u   /* RM params/notifier sysmem (ctl node)     */
+#define SEV_GPU_MM_KIND_REG       7u   /* register BAR aperture                    */
+
+/* Caching (mirror of NVOS33_FLAGS_CACHING_TYPE_*, nvos.h). */
+#define SEV_GPU_MM_CACHING_CACHED         0u
+#define SEV_GPU_MM_CACHING_UNCACHED       1u
+#define SEV_GPU_MM_CACHING_WRITECOMBINED  2u
+#define SEV_GPU_MM_CACHING_DEFAULT        6u
+
+/* HOPPER_USERMODE_A doorbell aperture size (NVC361_NV_USERMODE__SIZE = 64 KiB). */
+#define SEV_GPU_MM_DOORBELL_SIZE          (64u * 1024u)
+
 typedef struct {
     uint64_t magic;            /* SEV_GPU_RPC_MAGIC                          */
     uint32_t version;          /* SEV_GPU_RPC_VERSION                       */
@@ -165,6 +190,26 @@ typedef struct {
      * in the data-header path.  0 if the client has no data device.
      */
     uint64_t client_data_phys;
+
+    /*
+     * Phase A (A0): mmap-context reply. On an intercepted NV_ESC_RM_MAP_MEMORY
+     * the manager ran the REAL RM and knows facts the GPU-less client cannot
+     * compute locally. It returns them here so the client driver can build a
+     * genuine nv_alloc_mapping_context_t (mirroring rm_create_mmap_context) and
+     * let native nvidia_mmap_helper classify + map correctly — replacing the
+     * racy doorbell_mmap_pfn one-shot.
+     *
+     * Valid only when mm_valid != 0 on a MAP_MEMORY reply. All addresses are
+     * the client's own ivshmem BAR2 GPA (shadow), not manager-side addresses.
+     */
+    uint32_t mm_valid;         /* 1 => the fields below are populated         */
+    uint32_t mm_kind;          /* SEV_GPU_MM_KIND_* (doorbell/userd/...)      */
+    uint64_t mm_shadow_gpa;    /* access_start: client BAR2 GPA of the mapping */
+    uint64_t mm_size;          /* access_size: bytes                          */
+    uint32_t mm_caching;       /* NVOS33_FLAGS_CACHING_TYPE_* (cached/uc/wc)  */
+    uint32_t mm_prot;          /* NV_PROTECT_* (read / read-write)            */
+    uint32_t mm_is_ctl;        /* 1 => mapping belongs on the ctl node        */
+    uint32_t mm_reserved;
 
     sev_gpu_rpc_buffer_t buffers[SEV_GPU_RPC_MAX_BUFFERS];
 

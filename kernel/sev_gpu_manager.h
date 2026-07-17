@@ -219,7 +219,22 @@ typedef struct {
      */
     uint64_t client_mem_phys;
 
-    uint8_t  reserved[84];
+    /*
+     * Independent compute-doorbell path (deliberately separate from the
+     * req_kind/SUBMIT_WORK machinery, whose correctness is untested). This is a
+     * pure "mirror the doorbell ring" pipe: the client's QEMU overlay captures
+     * the token CUDA writes to the usermode window (+0x90) and publishes it here
+     * (@db_token) while bumping @db_seq. The manager notices @db_seq advanced,
+     * reads @db_token, and rings the REAL GPU usermode doorbell with exactly
+     * that token via sev_gpu_rm_ring_doorbell(). No channel lookup, no CC gate,
+     * no interaction with @state / @req_kind. @db_seq is the reason/edge marker:
+     * the manager tracks the last value it serviced, so a bump == "a compute
+     * doorbell was rung," independent of the per-instance irq_status bit.
+     */
+    uint32_t db_token;          /* in:  raw NV_VIRTUAL_FUNCTION_DOORBELL token */
+    uint32_t db_seq;            /* in:  monotonically bumped on each ring       */
+
+    uint8_t  reserved[76];
 } __attribute__((packed)) sev_gpu_data_header_t;
 
 /* req_kind discriminator for the data-region request (CE copy vs work submit) */
@@ -477,6 +492,57 @@ struct sev_gpu_kmb_mbox {
     (SEV_GPU_KMB_REGION_OFF + SEV_GPU_KMB_REGION_SIZE)        /* 0x298000 */
 #define SEV_GPU_GPUDESC_REGION_SIZE  (4UL * 1024UL)          /* one page */
 #define SEV_GPU_CARD_DESC_VERSION    2u
+
+/*
+ * =====================================================================
+ * DB REPLAY RING (experimental full-trap-and-replay of the doorbell MMIO page)
+ * ---------------------------------------------------------------------
+ * The client traps EVERY read and write on the whole doorbell page and posts it
+ * here as a request; the manager performs the REAL MMIO access against its
+ * mapped BAR1 VF doorbell page and posts the result back. For reads the client
+ * spin-waits on @state until the manager fills @value. This is a synchronous
+ * request/response mailbox (one in-flight op per VM is sufficient: a single vCPU
+ * MMIO access blocks until it returns). Separate from the db_token/db_seq path,
+ * which stays in the code but is not hooked when this ring is active.
+ *
+ * Lives at a fixed per-VM offset in the client's data region (BAR2), one slot
+ * per VM. Both QEMU (client + manager) and the manager module map the same file.
+ * =====================================================================
+ */
+#define SEV_GPU_DBRING_REGION_OFF \
+    (SEV_GPU_GPUDESC_REGION_OFF + SEV_GPU_GPUDESC_REGION_SIZE) /* 0x299000 */
+#define SEV_GPU_DBRING_SLOT_STRIDE   (4UL * 1024UL)            /* one page per VM */
+#define SEV_GPU_DBRING_REGION_SIZE \
+    ((unsigned long)SEV_GPU_MAX_VMS * SEV_GPU_DBRING_SLOT_STRIDE)
+#define SEV_GPU_DBRING_MAGIC         0x31524253u  /* "SBR1" */
+
+/* slot->state values */
+#define SEV_GPU_DBRING_IDLE     0u   /* empty, ready for a new op            */
+#define SEV_GPU_DBRING_REQ      1u   /* client posted a request              */
+#define SEV_GPU_DBRING_DONE     2u   /* manager posted the result            */
+
+/* slot->op values */
+#define SEV_GPU_DBRING_OP_READ  0u
+#define SEV_GPU_DBRING_OP_WRITE 1u
+#define SEV_GPU_DBRING_OP_DOORBELL 0x80000000u /* high bit: real +0x90 doorbell */
+
+typedef struct {
+    uint32_t magic;      /* SEV_GPU_DBRING_MAGIC                              */
+    volatile uint32_t state; /* SEV_GPU_DBRING_* (client sets REQ, mgr DONE)  */
+    uint32_t seq;        /* bumped by client per op (edge/debug)             */
+    uint32_t op;         /* SEV_GPU_DBRING_OP_READ / _WRITE                  */
+    uint64_t offset;     /* byte offset within the doorbell page             */
+    uint32_t size;       /* access size (4)                                  */
+    uint32_t value;      /* write: client->mgr value; read: mgr->client value*/
+    uint32_t rd_result;  /* read: the real MMIO value the manager read back  */
+    uint32_t status;     /* 0 = applied ok                                   */
+    uint8_t  reserved[4064];
+} __attribute__((packed)) sev_gpu_dbring_slot_t;
+
+static inline u64 sev_gpu_dbring_slot_off(u32 vm)
+{
+    return SEV_GPU_DBRING_REGION_OFF + (u64)vm * SEV_GPU_DBRING_SLOT_STRIDE;
+}
 
 typedef struct {
     __u32 version;          /* SEV_GPU_CARD_DESC_VERSION                 */

@@ -107,8 +107,7 @@ void data_init_header(struct sev_gpu_data_dev *dd)
 
 static int sev_gpu_data_open(struct inode *inode, struct file *filp)
 {
-	filp->private_data = container_of(inode->i_cdev,
-					  struct sev_gpu_data_dev, cdev);
+	filp->private_data = container_of(inode->i_cdev, struct sev_gpu_data_dev, data_cdev);
 	return 0;
 }
 
@@ -224,19 +223,24 @@ int sev_gpu_data_setup_chardev(struct sev_gpu_data_dev *dd)
 {
 	int ret;
 
-	dd->devt = MKDEV(MAJOR(sev_gpu_devt_base),
+	/*
+	 * Unified device: the data (BAR2-mmap) chardev uses the SEPARATE
+	 * data_cdev/data_devt/data_device fields so it does not clobber the
+	 * control (ioctl) chardev's cdev/devt/device on the same struct.
+	 */
+	dd->data_devt = MKDEV(MAJOR(sev_gpu_devt_base),
 			 MINOR(sev_gpu_devt_base) + 1 + dd->pool_index);
-	cdev_init(&dd->cdev, &sev_gpu_data_fops);
-	dd->cdev.owner = THIS_MODULE;
-	ret = cdev_add(&dd->cdev, dd->devt, 1);
+	cdev_init(&dd->data_cdev, &sev_gpu_data_fops);
+	dd->data_cdev.owner = THIS_MODULE;
+	ret = cdev_add(&dd->data_cdev, dd->data_devt, 1);
 	if (ret)
 		return ret;
 
-	dd->device = device_create(sev_gpu_class, NULL, dd->devt, NULL,
+	dd->data_device = device_create(sev_gpu_class, NULL, dd->data_devt, NULL,
 				   "sev_gpu_data%u", dd->pool_index);
-	if (IS_ERR(dd->device)) {
-		ret = PTR_ERR(dd->device);
-		cdev_del(&dd->cdev);
+	if (IS_ERR(dd->data_device)) {
+		ret = PTR_ERR(dd->data_device);
+		cdev_del(&dd->data_cdev);
 		return ret;
 	}
 	return 0;
@@ -244,6 +248,6 @@ int sev_gpu_data_setup_chardev(struct sev_gpu_data_dev *dd)
 
 void sev_gpu_data_teardown_chardev(struct sev_gpu_data_dev *dd)
 {
-	device_destroy(sev_gpu_class, dd->devt);
-	cdev_del(&dd->cdev);
+	device_destroy(sev_gpu_class, dd->data_devt);
+	cdev_del(&dd->data_cdev);
 }

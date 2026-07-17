@@ -127,13 +127,26 @@ struct sev_gpu_irq {
 struct sev_gpu_dev {
 	struct pci_dev *pdev;
 	void __iomem *regs;
-	void __iomem *shmem;
-	phys_addr_t   shmem_phys;
-	size_t        shmem_size;
+	/*
+	 * BAR2 shared region. Under the unified sev-channel device (Topology 1)
+	 * ONE pci_dev carries both signalling (BAR0=regs) and the per-client data
+	 * region (BAR2). The data-view field names (mem/mem_phys/mem_size) are
+	 * UNION ALIASES of the signalling names (shmem/shmem_phys/shmem_size) so
+	 * the ~228 existing dd->mem* references compile unchanged after
+	 * sev_gpu_data_dev is typedef'd to this struct.
+	 */
+	union { void __iomem *shmem;      void __iomem *mem;      };
+	union { phys_addr_t   shmem_phys; phys_addr_t   mem_phys; };
+	union { size_t        shmem_size; size_t        mem_size; };
 	int  ivposition;
 	bool is_manager;
 	u8   client_vm_id;
 	u8   comm_vm_id;
+	u32  pool_index;              /* manager slot (probe order); was data_dev */
+	u32  last_db_seq;             /* independent doorbell path: last db_seq the
+	                              * manager serviced for this client region. A
+	                              * mismatch vs header db_seq == new compute
+	                              * doorbell to mirror. */
 	int  nvectors;
 	struct sev_gpu_irq irqctx[IVSHMEM_NUM_VECTORS];
 	u64 request_off;
@@ -150,26 +163,37 @@ struct sev_gpu_dev {
 	struct mutex copy_lock;
 	atomic_t mgr_polling;
 	atomic_t cli_polling;
+	/* Control chardev (/dev/sev_gpu_manager): ioctl interface. */
 	dev_t devt;
 	struct cdev cdev;
 	struct device *device;
+	/*
+	 * Data chardev (/dev/sev_gpu_dataN): BAR2 mmap interface. Kept SEPARATE
+	 * from the control chardev to preserve the NVIDIA ctl-vs-device node
+	 * distinction (control maps sysmem params; device maps the BAR/doorbell).
+	 */
+	dev_t         data_devt;
+	struct cdev   data_cdev;
+	struct device *data_device;
 };
+
+/*
+ * Unified device: the former per-VM DATA device is now the SAME struct as the
+ * control/signalling device (one sev-channel pci_dev per client carries both).
+ * `struct sev_gpu_data_dev` resolves to `struct sev_gpu_dev` via this macro, so
+ * all existing `struct sev_gpu_data_dev` references compile unchanged. The few
+ * bare-typedef uses were converted to the struct form.
+ */
+#define sev_gpu_data_dev sev_gpu_dev
 
 /* The one control device (defined in sev_gpu_main.c). */
 extern struct sev_gpu_dev *ctrl_dev;
 
 /* PRIVATE per-VM DATA device (ivshmem-plain BAR2). */
-struct sev_gpu_data_dev {
-	struct pci_dev *pdev;
-	void __iomem *mem;
-	phys_addr_t   mem_phys;
-	size_t        mem_size;
-	bool          is_manager;
-	u32           pool_index;
-	dev_t devt;
-	struct cdev cdev;
-	struct device *device;
-};
+/* PRIVATE per-VM DATA device — now unified with sev_gpu_dev (see typedef above).
+ * data_devs[] holds the SAME device instances as the signalling side; under the
+ * channel a single pci_dev is both. Kept as a distinct array + accessor name so
+ * the ~228 existing data-path references are unchanged. */
 extern struct sev_gpu_data_dev *data_devs[SEV_GPU_MAX_VMS];
 
 /* client-side + bring-up shared state (defined in sev_gpu_main.c). */

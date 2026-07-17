@@ -145,6 +145,23 @@ module_param(bringup_ring, bool, 0644);
 MODULE_PARM_DESC(bringup_ring,
 		 "manager: (default 1) propagate NON-secure channel doorbells on shared-USERD GP_PUT advance; CC-secure channels are filtered out in the ring primitive (rm_sev_gpu_submit_work)");
 
+/*
+ * When the full-page doorbell MMIO trap is active (QEMU doorbell-trap=on, the
+ * default), the client's doorbell page is trapped-and-replayed to the manager's
+ * REAL GPU registers -- including the timer registers TIME_0/TIME_1 at
+ * +0x80/+0x84. In that mode the shadow usermode-PTIMER emulation must NOT run:
+ * its periodic iowrite32 of manufactured ktime into +0x80/+0x84 would (a) trap
+ * on every tick, (b) kick a spurious doorbell IRQ, and (c) replay a pointless
+ * write to a read-only hardware timer register -- the exact flood observed.
+ * With the trap active, CUDA's timer READS replay to the real GPU clock, so no
+ * emulation is needed. Default 1 to match the QEMU default; set 0 to force the
+ * old shadow-timer emulation (only meaningful with doorbell-trap=off in QEMU).
+ */
+bool doorbell_trap = true;
+module_param(doorbell_trap, bool, 0644);
+MODULE_PARM_DESC(doorbell_trap,
+		 "client: (default 1) full-page doorbell MMIO trap+replay is active; disables the shadow usermode-PTIMER emulation. Set 0 only if QEMU runs doorbell-trap=off.");
+
 
 /*
  * Manager L1 smoke test (Arch B, compute channels). At bind, allocate, log,
@@ -200,6 +217,25 @@ MODULE_PARM_DESC(psk_path, "path to the 32-byte shared PSK file anchoring the in
 uint auto_mtls_wait_ms = 4000;
 module_param(auto_mtls_wait_ms, uint, 0644);
 MODULE_PARM_DESC(auto_mtls_wait_ms, "in-kernel handshake per-phase / comm-key wait in ms (default 4000, keep < RPC timeout)");
+
+/*
+ * TEST-ONLY: kick the ECDHE-PSK handshake from a delayed work after bind,
+ * instead of waiting for the first client RM-RPC forward (which needs the GPU
+ * stack). Set hs_test_kick=<seconds> on the CLIENT to run the real handshake
+ * ~N seconds after probe (giving the manager time to bind). 0 = off (default).
+ * Exercises the comm-key crypto WITHOUT nvidia.ko or any CUDA activity.
+ */
+uint hs_test_kick;
+module_param(hs_test_kick, uint, 0644);
+MODULE_PARM_DESC(hs_test_kick, "TEST: seconds after client bind to auto-kick the ECDHE-PSK handshake (0=off)");
+static struct delayed_work hs_test_kick_work;
+static u8 hs_test_kick_vm;
+static void hs_test_kick_fn(struct work_struct *w)
+{
+	pr_info("sev_gpu: hs_test_kick: firing ECDHE-PSK handshake for vm %u\n",
+		hs_test_kick_vm);
+	sev_gpu_hs_client_maybe_run(hs_test_kick_vm);
+}
 
 /* Per-vector interrupt context (passed as request_irq dev_id). */
 /* struct sev_gpu_irq -> sev_gpu_state.h */
@@ -675,6 +711,8 @@ sev_gpu_chan_alloc_t chan_alloc_fn;	/* manager: bound from nvidia.ko    */
 sev_gpu_chan_free_t chan_free_fn;	/* manager: bound from nvidia.ko    */
 sev_gpu_ce_submit_t ce_submit_fn;	/* manager: bound from nvidia.ko    */
 sev_gpu_submit_work_t submit_work_fn;	/* manager: bound from nvidia.ko    */
+sev_gpu_ring_doorbell_t ring_doorbell_fn;	/* manager: raw doorbell ring (nvidia.ko) */
+sev_gpu_db_mmio_t db_mmio_fn;		/* manager: full-page doorbell replay (nvidia.ko) */
 sev_gpu_get_work_submit_token_t get_work_submit_token_fn; /* bound from nvidia.ko */
 sev_gpu_compute_alloc_t compute_alloc_fn;	/* manager: bound from nvidia.ko */
 sev_gpu_compute_free_t compute_free_fn;	/* manager: bound from nvidia.ko    */
@@ -940,36 +978,27 @@ static void sev_gpu_rpc_work(struct work_struct *w)
 {
 	int i;
 
-	pr_info_ratelimited("sev_gpu: rpc_work: scanning %d data region(s)\n",
-			    num_data_devs);
-
 	for (i = 0; i < num_data_devs; i++) {
 		struct sev_gpu_data_dev *dd = data_devs[i];
-		void __iomem *mb;
-		u64 magic;
-		u32 state;
 
 		if (!dd || !dd->mem)
 			continue;
 
 		/* Mediated CE copy request: lives in the data-region header. */
 		sev_gpu_copy_service(dd, (u32)dd->pool_index);
-
-		if (dd->mem_size < SEV_GPU_RPC_STAGING_OFF)
-			continue;
-
-		mb = dd->mem + SEV_GPU_RPC_MAILBOX_OFF;
-		memcpy_fromio(&magic, mb + offsetof(sev_gpu_rpc_slot_t, magic),
-			      sizeof(magic));
-		if (magic != SEV_GPU_RPC_MAGIC)
-			continue;
-
-		state = ioread32(mb + offsetof(sev_gpu_rpc_slot_t, state));
-		if (state != SEV_GPU_RPC_REQUEST)
-			continue;
-
-		sev_gpu_rpc_service(dd);
 	}
+	/*
+	 * NOTE: RM-RPC mailbox servicing was REMOVED from this work handler. In
+	 * the unified sev-channel topology BAR2 IS the data region, so the old
+	 * "scan dd->mem + RPC_MAILBOX_OFF and call sev_gpu_rpc_service()" path
+	 * polled the SAME mailbox as the kthread's rpc_service_slot(), racing it.
+	 * sev_gpu_rpc_service() is the pre-unification flat-only replay that bails
+	 * with -EOPNOTSUPP ("nested buffers unsupported") on any control with
+	 * embedded pointers (GET_BUILD_VERSION, GR_GET_INFO, GET_CHANNELLIST),
+	 * returning transport=0xffff to the client. rpc_service_slot() (kthread,
+	 * rpc_thread_fn) is the sole, policy-aware RM-RPC owner and handles the
+	 * rpc_ctrl_policies[] LEVEL2 controls. Keep copy service here only.
+	 */
 }
 
 /* ------------------------------------------------------------------ */
@@ -2317,6 +2346,8 @@ extern u32 sev_gpu_rm_ce_submit(u32 h_client, u32 flags,
 				u64 src, u64 dst, u64 length,
 				u64 auth_tag, u64 iv);
 extern u32 sev_gpu_rm_submit_work(u32 h_client, u32 h_channel);
+extern u32 sev_gpu_rm_ring_doorbell(u32 token);
+extern u32 sev_gpu_rm_db_mmio(u32 is_write, u32 page_off, u32 in_val, u32 *out_val);
 extern u32 sev_gpu_rm_get_work_submit_token(u32 h_client, u32 h_channel,
 					    u32 *token);
 extern u32 sev_gpu_rm_alloc_compute_channel(u32 flags, u64 userd_gpa,
@@ -2363,6 +2394,20 @@ static void kmb_manager_bind_nvidia(void)
 		pr_info("sev_gpu: bound nvidia.ko compute work submit\n");
 	else
 		pr_info("sev_gpu: nvidia work submit absent; mediated launches disabled\n");
+
+	/* Independent raw doorbell-ring (separate from submit_work above). */
+	ring_doorbell_fn = symbol_get(sev_gpu_rm_ring_doorbell);
+	if (ring_doorbell_fn)
+		pr_info("sev_gpu: bound nvidia.ko raw doorbell ring\n");
+	else
+		pr_info("sev_gpu: nvidia raw doorbell ring absent; compute doorbell mirror disabled\n");
+
+	/* EXPERIMENTAL full-page doorbell trap+replay (arbitrary-offset VF r/w). */
+	db_mmio_fn = symbol_get(sev_gpu_rm_db_mmio);
+	if (db_mmio_fn)
+		pr_info("sev_gpu: bound nvidia.ko doorbell MMIO replay\n");
+	else
+		pr_info("sev_gpu: nvidia doorbell MMIO replay absent; full-page trap disabled\n");
 
 	/* Work-submit-token query is optional (Fork B WLC launch target). */
 	get_work_submit_token_fn = symbol_get(sev_gpu_rm_get_work_submit_token);
@@ -2528,6 +2573,14 @@ static void kmb_manager_unbind_nvidia(void)
 	if (submit_work_fn) {
 		symbol_put(sev_gpu_rm_submit_work);
 		submit_work_fn = NULL;
+	}
+	if (ring_doorbell_fn) {
+		symbol_put(sev_gpu_rm_ring_doorbell);
+		ring_doorbell_fn = NULL;
+	}
+	if (db_mmio_fn) {
+		symbol_put(sev_gpu_rm_db_mmio);
+		db_mmio_fn = NULL;
 	}
 
 	if (get_work_submit_token_fn) {
@@ -2831,6 +2884,43 @@ static bool pdev_is_control(struct pci_dev *pdev)
 }
 
 /* ---- per-VM private data device probe (ivshmem-plain, BAR2 only) ---- */
+/*
+ * Channel IRQ: ONE MSI vector (vs ivshmem's 4 MSI-X). The reason is demuxed
+ * from SEV_CH_REG_IRQ_STATUS inside sev_gpu_channel_irq() (in the channel
+ * backend). Falls back to poll-only if MSI is unavailable.
+ */
+static int sev_gpu_setup_channel_irq(struct sev_gpu_dev *d)
+{
+	int ret;
+
+	ret = pci_alloc_irq_vectors(d->pdev, 1, 1, PCI_IRQ_MSI);
+	if (ret < 0) {
+		pr_warn("sev_gpu: channel MSI unavailable (%d); poll-only\n", ret);
+		d->nvectors = 0;
+		return 0;                    /* not fatal */
+	}
+	d->irqctx[0].dev = d;
+	d->irqctx[0].vector = 0;
+	ret = request_irq(pci_irq_vector(d->pdev, 0),
+			  sev_gpu_channel_irq, 0, DRV_NAME, d);
+	if (ret) {
+		pr_err("sev_gpu: channel request_irq failed (%d)\n", ret);
+		pci_free_irq_vectors(d->pdev);
+		return ret;
+	}
+	d->nvectors = 1;
+	return 0;
+}
+
+static void sev_gpu_free_channel_irq(struct sev_gpu_dev *d)
+{
+	if (d->nvectors) {
+		free_irq(pci_irq_vector(d->pdev, 0), d);
+		pci_free_irq_vectors(d->pdev);
+		d->nvectors = 0;
+	}
+}
+
 static int sev_gpu_probe_data(struct pci_dev *pdev)
 {
 	struct sev_gpu_data_dev *dd;
@@ -3062,6 +3152,217 @@ err_free:
 	return ret;
 }
 
+/* ---- unified channel device probe (sev-channel 1af4:10f1) --------------- *
+ * ONE pci_dev per client carries BOTH signalling (BAR0=regs) and the per-VM
+ * data region (BAR2). It populates the signalling view (ctrl_dev / chan_devs)
+ * AND registers itself in data_devs[] so the ~228 data-path references resolve
+ * unchanged. Identity is by PROBE ORDER (manager) / anonymous (client); no
+ * IVPosition, no vm-id property. Single MSI vector, demuxed in the backend.
+ */
+static int sev_gpu_probe_channel(struct pci_dev *pdev)
+{
+	struct sev_gpu_dev *d;
+	int ret;
+
+	d = kzalloc(sizeof(*d), GFP_KERNEL);
+	if (!d)
+		return -ENOMEM;
+
+	d->pdev = pdev;
+	d->is_manager = manager;
+	d->comm_vm_id = 0;
+	init_waitqueue_head(&d->grant_wq);
+	mutex_init(&d->rpc_lock);
+	mutex_init(&d->copy_lock);
+	atomic_set(&d->mgr_polling, 0);
+	atomic_set(&d->cli_polling, 0);
+	atomic_set(&d->rpc_seq, 0);
+	pci_set_drvdata(pdev, d);
+
+	ret = pci_enable_device(pdev);
+	if (ret)
+		goto err_free;
+
+	ret = pci_request_regions(pdev, DRV_NAME);
+	if (ret)
+		goto err_disable;
+
+	/* BAR0 = registers (magic/role/doorbell/complete/irq). */
+	d->regs = pci_iomap(pdev, 0, SEV_CH_BAR_REGS_SIZE);
+	if (!d->regs) {
+		ret = -ENOMEM;
+		goto err_regions;
+	}
+
+	/* BAR2 = per-client data region (== shmem == mem via union). */
+	d->shmem_phys = pci_resource_start(pdev, 2);
+	d->shmem_size = pci_resource_len(pdev, 2);
+	if (!d->shmem_phys || !d->shmem_size) {
+		pr_err("sev_gpu: channel BAR2 not present\n");
+		ret = -ENODEV;
+		goto err_unmap_regs;
+	}
+	d->shmem = pci_iomap(pdev, 2, d->shmem_size);
+	if (!d->shmem) {
+		ret = -ENOMEM;
+		goto err_unmap_regs;
+	}
+
+	/* Static identity from BAR0 + probe-order slot; registers chan_devs[]. */
+	ret = sev_gpu_channel_probe_identity(d);
+	if (ret)
+		goto err_unmap_shmem;
+
+	/*
+	 * Module-wide global state (registry locks + handshake workqueue) must be
+	 * initialized ONCE. On the manager, probe_channel runs per-client (N times);
+	 * re-initializing these locks mid-use is unsafe and re-allocating hs_state.wq
+	 * leaks the prior one. Do it only on the first bind (ctrl_dev still NULL).
+	 */
+	if (!ctrl_dev) {
+		spin_lock_init(&manager_state.lock);
+		manager_state.gpu_owner = 0xFF;
+		spin_lock_init(&comm_keystore.lock);
+		spin_lock_init(&assign_state.lock);
+		spin_lock_init(&cc_pool.lock);
+		spin_lock_init(&client_kmb_store.lock);
+
+		spin_lock_init(&hs_state.lock);
+		hs_state.pending = 0;
+		INIT_WORK(&hs_state.work, sev_gpu_hs_work);
+		hs_state.wq = alloc_workqueue("sev_gpu_hs", WQ_UNBOUND, 1);
+		if (!hs_state.wq) {
+			ret = -ENOMEM;
+			goto err_unmap_shmem;
+		}
+	}
+
+	if (d->is_manager) {
+		d->sched_wq = alloc_workqueue("sev_gpu_sched", WQ_UNBOUND, 1);
+		if (!d->sched_wq) {
+			ret = -ENOMEM;
+			goto err_wq;
+		}
+		INIT_WORK(&d->sched_work, sev_gpu_sched_work);
+
+		d->rpc_wq = alloc_workqueue("sev_gpu_rpc", WQ_UNBOUND, 1);
+		if (!d->rpc_wq) {
+			destroy_workqueue(d->sched_wq);
+			d->sched_wq = NULL;
+			ret = -ENOMEM;
+			goto err_wq;
+		}
+		INIT_WORK(&d->rpc_work, sev_gpu_rpc_work);
+
+		/*
+		 * Per-client region: the manager stamps THIS instance's own BAR2
+		 * header (each client has its own region, not a shared control BAR).
+		 */
+		manager_init_layout(d);
+	} else {
+		if (client_read_layout(d) == -EAGAIN)
+			pr_info("sev_gpu: manager header not ready; will retry on ioctl\n");
+		/* Client is anonymous: slot 0, no IVPosition adoption. */
+	}
+
+	ret = sev_gpu_setup_channel_irq(d);
+	if (ret)
+		goto err_wq;
+
+	/*
+	 * Control chardev (/dev/sev_gpu_manager) is a SINGLETON for the whole
+	 * module. On the manager, probe_channel runs once PER CLIENT (N devices),
+	 * but there must be exactly one control node — creating it per-instance
+	 * collides on the second bind (-EEXIST in kobject_add). Create it only on
+	 * the first probe (ctrl_dev still NULL); later instances share it.
+	 * The DATA chardev below is per-instance (/dev/sev_gpu_dataN, unique).
+	 */
+	if (!ctrl_dev) {
+		ret = sev_gpu_setup_chardev(d);
+		if (ret)
+			goto err_irqs;
+		ctrl_dev = d;
+	}
+
+	/*
+	 * Register the DATA view: same instance, indexed by the launch vm-id
+	 * (d->client_vm_id, set by probe_identity). Deterministic across PCI
+	 * enumeration order. Populates data_devs[] so the ~228 dd->mem* refs
+	 * resolve.
+	 */
+	d->pool_index = d->client_vm_id;
+	data_devs[d->pool_index] = d;
+	if (d->pool_index + 1 > num_data_devs)
+		num_data_devs = d->pool_index + 1;
+
+	ret = sev_gpu_data_setup_chardev(d);
+	if (ret)
+		pr_warn("sev_gpu: data chardev setup failed (%d); mmap node absent\n",
+			ret);
+
+	pr_info("sev_gpu: channel bound slot=%u shmem_phys=0x%llx size=%zu manager=%d vectors=%d\n",
+		d->pool_index, (unsigned long long)d->shmem_phys,
+		d->shmem_size, d->is_manager, d->nvectors);
+	pr_info("sev_gpu: /dev/%s ready\n", DEVICE_NAME);
+
+	if (d->is_manager) {
+		/*
+		 * Global manager control-plane (RPC poller + nvidia/kmb symbol
+		 * binds + self-test) is module-wide: bind ONCE on the first
+		 * instance. Per-region publish (gpu_desc) runs for every instance.
+		 */
+		if (ctrl_dev == d) {
+			rpc_manager_start();
+			rpc_manager_bind_nvidia();
+			kmb_manager_bind_nvidia();
+			sev_gpu_compute_selftest();
+		}
+		sev_gpu_publish_gpu_desc(d);
+	} else {
+		rpc_client_bind_nvidia();
+		sev_gpu_client_attach_gpu(d);
+		/*
+		 * TEST-ONLY: if hs_test_kick is set, schedule the ECDHE-PSK
+		 * handshake to fire after a delay (letting the manager finish
+		 * binding), so the comm-key crypto can be verified without any
+		 * GPU/CUDA activity to trigger the normal rm_forward path.
+		 */
+		if (hs_test_kick) {
+			hs_test_kick_vm = d->client_vm_id;
+			INIT_DELAYED_WORK(&hs_test_kick_work, hs_test_kick_fn);
+			schedule_delayed_work(&hs_test_kick_work,
+					      hs_test_kick * HZ);
+			pr_info("sev_gpu: hs_test_kick: handshake scheduled in %us for vm %u\n",
+				hs_test_kick, d->client_vm_id);
+		}
+	}
+	return 0;
+err_irqs:
+	sev_gpu_free_channel_irq(d);
+err_wq:
+	if (d->rpc_wq)
+		destroy_workqueue(d->rpc_wq);
+	if (d->sched_wq)
+		destroy_workqueue(d->sched_wq);
+	if (hs_state.wq) {
+		destroy_workqueue(hs_state.wq);
+		hs_state.wq = NULL;
+	}
+	sev_gpu_channel_remove_identity(d);
+err_unmap_shmem:
+	pci_iounmap(pdev, d->shmem);
+err_unmap_regs:
+	pci_iounmap(pdev, d->regs);
+err_regions:
+	pci_release_regions(pdev);
+err_disable:
+	pci_disable_device(pdev);
+err_free:
+	pci_set_drvdata(pdev, NULL);
+	kfree(d);
+	return ret;
+}
+
 static void sev_gpu_remove_control(struct pci_dev *pdev)
 {
 	struct sev_gpu_dev *d = pci_get_drvdata(pdev);
@@ -3108,6 +3409,70 @@ static void sev_gpu_remove_control(struct pci_dev *pdev)
 	pr_info("sev_gpu: control device removed\n");
 }
 
+/* Unified channel device teardown (mirror of probe_channel). */
+static void sev_gpu_remove_channel(struct pci_dev *pdev)
+{
+	struct sev_gpu_dev *d = pci_get_drvdata(pdev);
+
+	if (!d)
+		return;
+
+	/* Cancel any pending test handshake kick before freeing the device. */
+	if (hs_test_kick)
+		cancel_delayed_work_sync(&hs_test_kick_work);
+
+	/* Data chardev is per-instance; always tear down. */
+	sev_gpu_data_teardown_chardev(d);
+	/* Control chardev is the singleton — only its owner tears it down. */
+	if (ctrl_dev == d)
+		sev_gpu_teardown_chardev(d);
+	/*
+	 * Global control-plane teardown (RPC manager, nvidia unbind, handshake wq)
+	 * is module-wide, not per-instance — run it only when the owning (ctrl_dev)
+	 * instance is removed. Per-instance workqueues (rpc_wq/sched_wq) are freed
+	 * for every instance below.
+	 */
+	if (ctrl_dev == d) {
+		if (d->is_manager) {
+			rpc_manager_stop();
+			rpc_manager_unbind_nvidia();
+			kmb_manager_unbind_nvidia();
+		} else {
+			sev_gpu_client_detach_gpu();
+			rpc_client_unbind_nvidia();
+		}
+		if (hs_state.wq) {
+			flush_workqueue(hs_state.wq);
+			destroy_workqueue(hs_state.wq);
+			hs_state.wq = NULL;
+		}
+	}
+	if (d->rpc_wq) {
+		flush_workqueue(d->rpc_wq);
+		destroy_workqueue(d->rpc_wq);
+		d->rpc_wq = NULL;
+	}
+	if (d->sched_wq) {
+		flush_workqueue(d->sched_wq);
+		destroy_workqueue(d->sched_wq);
+		d->sched_wq = NULL;
+	}
+	sev_gpu_free_channel_irq(d);
+	sev_gpu_channel_remove_identity(d);
+	if (d->pool_index < SEV_GPU_MAX_VMS && data_devs[d->pool_index] == d)
+		data_devs[d->pool_index] = NULL;
+	pci_iounmap(pdev, d->shmem);
+	pci_iounmap(pdev, d->regs);
+	pci_release_regions(pdev);
+	pci_disable_device(pdev);
+	pci_set_drvdata(pdev, NULL);
+	if (ctrl_dev == d)
+		ctrl_dev = NULL;
+	kfree(d);
+
+	pr_info("sev_gpu: channel device removed\n");
+}
+
 static void sev_gpu_remove_data(struct pci_dev *pdev)
 {
 	struct sev_gpu_data_dev *dd = pci_get_drvdata(pdev);
@@ -3135,6 +3500,10 @@ static void sev_gpu_remove_data(struct pci_dev *pdev)
 
 static int sev_gpu_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
+	/* sev-channel (unified: BAR0 regs + BAR2 region on one device). */
+	if (pdev->device == SEV_CH_DEVICE_ID)
+		return sev_gpu_probe_channel(pdev);
+	/* ivshmem fallback (separate control + data devices). */
 	if (pdev_is_control(pdev))
 		return sev_gpu_probe_control(pdev);
 	return sev_gpu_probe_data(pdev);
@@ -3142,6 +3511,10 @@ static int sev_gpu_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 static void sev_gpu_remove(struct pci_dev *pdev)
 {
+	if (pdev->device == SEV_CH_DEVICE_ID) {
+		sev_gpu_remove_channel(pdev);
+		return;
+	}
 	if (pdev_is_control(pdev))
 		sev_gpu_remove_control(pdev);
 	else
@@ -3149,7 +3522,8 @@ static void sev_gpu_remove(struct pci_dev *pdev)
 }
 
 static const struct pci_device_id sev_gpu_ids[] = {
-	{ PCI_DEVICE(IVSHMEM_VENDOR_ID, IVSHMEM_DEVICE_ID) },
+	{ PCI_DEVICE(SEV_CH_VENDOR_ID, SEV_CH_DEVICE_ID) },      /* sev-channel */
+	{ PCI_DEVICE(IVSHMEM_VENDOR_ID, IVSHMEM_DEVICE_ID) },   /* ivshmem fallback */
 	{ 0, },
 };
 MODULE_DEVICE_TABLE(pci, sev_gpu_ids);
@@ -3188,7 +3562,17 @@ static void rpc_client_bind_nvidia(void)
 	}
 
 	mmap_client_bind_nvidia();
-	sev_gpu_usermode_timer_start();
+	/*
+	 * Only run the shadow usermode-PTIMER emulation when the full-page
+	 * doorbell trap is NOT active. With the trap active, CUDA's timer reads
+	 * replay to the real GPU clock, and running the emulation would flood the
+	 * trapped page with iowrite32 timer writes (spurious IRQs + pointless
+	 * read-only-register replays).
+	 */
+	if (!doorbell_trap)
+		sev_gpu_usermode_timer_start();
+	else
+		pr_info("sev_gpu: doorbell-trap active; shadow PTIMER emulation disabled (CUDA timer reads replay to real GPU clock)\n");
 }
 
 static void rpc_client_unbind_nvidia(void)

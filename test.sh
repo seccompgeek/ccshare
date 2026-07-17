@@ -9,7 +9,7 @@ BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KERNEL_DIR="$BASEDIR/kernel"
 USERSPACE_DIR="$BASEDIR/userspace"
 NVIDIA_DIR="$BASEDIR/nvidia-driver"
-MODULE_NAME="sev_gpu_manager"
+MODULE_NAME="sev_gpu"
 IVSHMEM_PCI_ID="1af4:1110"
 
 # Where the running guest kernel's build headers live (for the nvidia.ko build).
@@ -29,6 +29,41 @@ role_to_param() {
         manager|1|"") echo "manager=1" ;;
         *) echo "[-] Unknown role '$1' (use manager|client)" >&2; exit 1 ;;
     esac
+}
+
+# Phase A + crypto post-load verification. Reads dmesg for the markers that
+# confirm (a) the comm-key handshake ran, (b) the client registered its Phase A
+# nvidia.ko hooks (mmap redirect + UD-window provider). GPU-independent; the
+# mmap-context/UD-aperture *use* lines only appear during cuda-proof.
+phase_a_dmesg_check() {
+    local role="${1:-manager}"
+    echo "[*] Phase A / crypto check ($role):"
+    if [ "$role" = "client" ] || [ "$role" = "0" ]; then
+        if dmesg | grep -q "auto-mTLS: client handshake complete, comm key installed"; then
+            echo "    [+] comm key installed (ECDHE-PSK handshake OK)"
+        elif dmesg | grep -q "hs_test_kick:"; then
+            echo "    [~] handshake kicked; waiting -- re-check dmesg in a moment"
+        else
+            echo "    [ ] no comm key yet (set HS_TEST_KICK=5 on reload, or it fires on first CUDA)"
+        fi
+        if dmesg | grep -q "registered UD-window provider with nvidia.ko"; then
+            echo "    [+] UD-window provider registered (A2)"
+        else
+            echo "    [ ] UD-window provider NOT registered -- is nvidia.ko (client) loaded first?"
+        fi
+        if dmesg | grep -q "registered mmap redirect with nvidia.ko"; then
+            echo "    [+] mmap redirect registered"
+        fi
+        if dmesg | grep -qi "confirm mismatch"; then
+            echo "    [!] HANDSHAKE CONFIRM MISMATCH -- PSK differs between VMs or MITM"
+        fi
+    else
+        if dmesg | grep -q "auto-mTLS: mgr FINISHED ok, comm key committed"; then
+            echo "    [+] comm key committed (a client completed the handshake)"
+        else
+            echo "    [ ] no comm key yet (expected until a client kicks the handshake)"
+        fi
+    fi
 }
 
 echo "=== SEV GPU Manager Test Script ==="
@@ -71,6 +106,13 @@ case "${1:-test}" in
         if [ "${3:-}" = "loopback" ] && [ "$ROLE_PARAM" = "manager=1" ]; then
             ROLE_PARAM="$ROLE_PARAM rpc_loopback=1 copy_loopback=1"
         fi
+        # Phase A / crypto: on the CLIENT, optionally auto-kick the ECDHE-PSK
+        # handshake N seconds after bind (no GPU/CUDA needed to trigger it).
+        # Enable with HS_TEST_KICK=<seconds> (default off). Only meaningful for
+        # the client role; the manager responds passively.
+        if [ "$ROLE_PARAM" = "manager=0" ] && [ -n "${HS_TEST_KICK:-}" ]; then
+            ROLE_PARAM="$ROLE_PARAM hs_test_kick=$HS_TEST_KICK"
+        fi
         echo "[*] Reloading kernel module ($ROLE_PARAM)..."
         cd "$KERNEL_DIR"
         if lsmod | grep -q "$MODULE_NAME"; then
@@ -85,6 +127,7 @@ case "${1:-test}" in
         echo "[+] Module (re)loaded"
         sleep 1
         dmesg | grep sev_gpu | tail -8
+        phase_a_dmesg_check "${2:-manager}"
         ;;
 
     sync)
@@ -671,9 +714,16 @@ case "${1:-test}" in
         rc=$?
         if [ "$ROLE" = "client" ]; then
             echo ""
-            echo "[*] Client-side mmap redirect trace (this VM):"
+            echo "[*] Phase A mmap-context trace (this VM):"
+            echo "    -- UD aperture set on client device (A2):"
+            dmesg | grep -E 'NVRM: SEV: client UD aperture set' | tail -4 || \
+                echo "       (none -- nv->ud not populated; IS_UD_OFFSET won't classify doorbell)"
+            echo "    -- native mmap-context built from manager reply (A1):"
+            dmesg | grep -E 'sev_gpu: MAP_MEMORY ctx |NVRM: SEV: build_mmap_context' | tail -8 || \
+                echo "       (none -- MAP_MEMORY reply carried no mm_valid, or fd missing)"
+            echo "[*] Legacy client-side mmap redirect trace (fallback path):"
             dmesg | grep -E 'NVRM: SEV: mmap redirect' | tail -8 || \
-                echo "    (no mmap redirect lines -- USERD mmap was not intercepted)"
+                echo "    (no redirect lines -- expected if A1 native path handled the mmap)"
             echo "[*] Client-side mmap REJECTIONS (this VM):"
             dmesg | grep -E 'NVRM: SEV: client mmap not mediated|NVRM: VM: invalid mmap context' | tail -8 || \
                 echo "    (no rejection lines -- no unmediated CPU map was attempted)"

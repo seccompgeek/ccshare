@@ -74,12 +74,212 @@ int sev_gpu_scan_and_grant(struct sev_gpu_dev *d)
  * re-arm interrupts and do a final scan to close the request-after-last-scan
  * race (re-masking if something raced in).
  */
+/*
+ * Service the independent compute doorbell for one client region.
+ *
+ * Edge-detects the header db_seq; on an advance, reads db_token and rings the
+ * REAL GPU usermode doorbell with exactly that token via the nvidia.ko raw-ring
+ * export. Touches ONLY db_seq/db_token -- never state/req_kind -- so it is fully
+ * independent of the CE-copy / SUBMIT_WORK path. Returns 1 if it rang.
+ */
+int sev_gpu_doorbell_service(struct sev_gpu_data_dev *dd)
+{
+	void __iomem *hdr;
+	u32 seq, token, rc;
+
+	if (!dd || !dd->mem)
+		return 0;
+	if (dd->mem_size <= SEV_GPU_DATA_HEADER_SIZE)
+		return 0;
+
+	hdr = dd->mem;
+
+	seq = ioread32(hdr + offsetof(sev_gpu_data_header_t, db_seq));
+	if (seq == dd->last_db_seq)
+		return 0;			/* no new doorbell */
+
+	rmb();
+	token = ioread32(hdr + offsetof(sev_gpu_data_header_t, db_token));
+
+	/* Consume this seq before ringing: a ring racing in during the RM call
+	 * is caught next pass, never lost or double-served for the same seq. */
+	dd->last_db_seq = seq;
+
+	if (!ring_doorbell_fn) {
+		pr_warn_ratelimited(
+			"sev_gpu: doorbell vm=%u seq=%u token=0x%08x but nvidia.ko ring export absent\n",
+			dd->client_vm_id, seq, token);
+		return 0;
+	}
+
+	pr_info_ratelimited(
+		"sev_gpu: DOORBELL mirror vm=%u seq=%u token=0x%08x -> ringing real GPU\n",
+		dd->client_vm_id, seq, token);
+
+	rc = ring_doorbell_fn(token);		/* -> sev_gpu_rm_ring_doorbell */
+	if (rc != 0)
+		pr_warn_ratelimited(
+			"sev_gpu: doorbell ring vm=%u token=0x%08x rc=0x%x\n",
+			dd->client_vm_id, token, rc);
+
+	/*
+	 * EXPERIMENT (doorbell-driven submit): the raw ring above uses db_token
+	 * (which has been 0). The real compute channel stages GP_PUT in its shared
+	 * USERD, detected only by the bring-up POLL today. Here we also drive a real
+	 * work submission on the doorbell EDGE -- same do_submit_work the poll uses,
+	 * but triggered the instant the client rings, which is the most native-like
+	 * ordering (CUDA rings -> submit now). If GP_GET advances here but not from
+	 * the poll, timing/ordering is the factor. We submit on every tracked compute
+	 * channel for this VM (the real compute channel 0x5c0000d9 is among them).
+	 */
+	{
+		u32 vm = dd->client_vm_id;
+		u32 i, n;
+		u32 hc = 0, hch = 0;
+
+		n = sev_gpu_bringup_get_channels(vm, 0, NULL, NULL);
+		for (i = 0; i < n; i++) {
+			if (sev_gpu_bringup_get_channels(vm, i, &hc, &hch) == 0)
+				break;
+			if (!hc || !hch)
+				continue;
+			{
+				int src = sev_gpu_do_submit_work(vm, hc, hch, true);
+				pr_info_ratelimited(
+					"sev_gpu: DOORBELL-submit vm=%u hClient=0x%x hChannel=0x%x rc=%d\n",
+					vm, hc, hch, src);
+			}
+		}
+	}
+
+	return 1;
+}
+
+/*
+ * EXPERIMENTAL full-page doorbell trap+replay: service one client's DB replay
+ * ring slot. The client (QEMU) trapped a read/write on the doorbell page and is
+ * spin-waiting; we perform the REAL VF-register access via db_mmio_fn and post
+ * the result back, then flip state to DONE. Returns 1 if it serviced an op.
+ *
+ * Independent of the db_seq/token mirror path (which stays but is not hooked
+ * when the client runs with doorbell_trap=on).
+ */
+int sev_gpu_dbring_service(struct sev_gpu_data_dev *dd)
+{
+	void __iomem *slot;
+	u32 state, op, page_off, val, rd = 0xffffffffu, rc;
+	u64 off64;
+
+	if (!dd || !dd->mem)
+		return 0;
+
+	slot = dd->mem + sev_gpu_dbring_slot_off(dd->client_vm_id);
+
+	state = ioread32(slot + offsetof(sev_gpu_dbring_slot_t, state));
+	if (state != SEV_GPU_DBRING_REQ)
+		return 0;			/* no pending op */
+
+	rmb();
+	op       = ioread32(slot + offsetof(sev_gpu_dbring_slot_t, op));
+	off64    = ioread32(slot + offsetof(sev_gpu_dbring_slot_t, offset));
+	off64   |= (u64)ioread32(slot + offsetof(sev_gpu_dbring_slot_t, offset) + 4) << 32;
+	val      = ioread32(slot + offsetof(sev_gpu_dbring_slot_t, value));
+	page_off = (u32)off64;
+
+	/* High bit of op marks the real +0x90 compute doorbell; strip it. */
+	{
+		bool is_doorbell = (op & SEV_GPU_DBRING_OP_DOORBELL) != 0;
+		op &= ~SEV_GPU_DBRING_OP_DOORBELL;
+		if (is_doorbell)
+			pr_info("sev_gpu: db-replay vm=%u COMPUTE DOORBELL ring off=0x%x val=0x%08x\n",
+				dd->client_vm_id, page_off, val);
+	}
+
+	if (!db_mmio_fn) {
+		pr_warn_ratelimited(
+			"sev_gpu: db-replay vm=%u but nvidia.ko MMIO replay absent\n",
+			dd->client_vm_id);
+		iowrite32(0xffffffffu, slot + offsetof(sev_gpu_dbring_slot_t, rd_result));
+		iowrite32(1u, slot + offsetof(sev_gpu_dbring_slot_t, status));
+		wmb();
+		iowrite32(SEV_GPU_DBRING_DONE,
+			  slot + offsetof(sev_gpu_dbring_slot_t, state));
+		return 1;
+	}
+
+	if (op == SEV_GPU_DBRING_OP_WRITE) {
+		//@kymartin temporally forced
+		if(page_off == 0x90){
+			val = 0x40040003;
+			rc = db_mmio_fn(1, page_off, val, NULL);
+			rc = db_mmio_fn(1, page_off, val, NULL);
+			rc = db_mmio_fn(1, page_off, val, NULL);
+			sev_gpu_do_submit_work(0, 0xc1d00010, 0x5c0000d9, true);
+			sev_gpu_do_submit_work(0, 0xc1d00010, 0x5c0000d9, true);
+			sev_gpu_do_submit_work(0, 0xc1d00010, 0x5c0000d9, true);
+		}else {
+			rc = db_mmio_fn(1, page_off, val, NULL);
+		}
+		pr_info_ratelimited(
+			"sev_gpu: db-replay vm=%u WRITE off=0x%x val=0x%08x rc=0x%x\n",
+			dd->client_vm_id, page_off, val, rc);
+	} else {
+		rc = db_mmio_fn(0, page_off, 0, &rd);
+		pr_info_ratelimited(
+			"sev_gpu: db-replay vm=%u READ  off=0x%x -> 0x%08x rc=0x%x\n",
+			dd->client_vm_id, page_off, rd, rc);
+	}
+
+	iowrite32(rd, slot + offsetof(sev_gpu_dbring_slot_t, rd_result));
+	iowrite32(rc ? 1u : 0u, slot + offsetof(sev_gpu_dbring_slot_t, status));
+	wmb();
+	iowrite32(SEV_GPU_DBRING_DONE,
+		  slot + offsetof(sev_gpu_dbring_slot_t, state));
+	return 1;
+}
+
 void sev_gpu_sched_work(struct work_struct *w)
 {
 	struct sev_gpu_dev *d = container_of(w, struct sev_gpu_dev, sched_work);
+	int vm;
 
 	if (!d->shmem)
 		return;
+
+	/*
+	 * Independent compute-doorbell service. Runs on every wake, before grant
+	 * scanning, and checks EVERY client region's db_seq: a client's compute
+	 * doorbell shares the manager wake (one db_notifier fd) with RPC, so we
+	 * cannot tell from the interrupt which client rang a compute doorbell --
+	 * we simply scan all regions for an advanced db_seq and mirror the token.
+	 * This is edge-based (one ring per bump) and touches only db_seq/db_token,
+	 * never state/req_kind, so it is fully independent of the copy/submit path.
+	 */
+	for (vm = 0; vm < SEV_GPU_MAX_VMS; vm++) {
+		struct sev_gpu_data_dev *dd = data_devs[vm];
+		if (dd)
+			sev_gpu_doorbell_service(dd);
+	}
+
+	/*
+	 * EXPERIMENTAL full-page doorbell trap+replay. The client spin-waits on
+	 * its DB replay-ring slot for each trapped read/write, so drain ALL VMs'
+	 * slots repeatedly until none is pending -- a single wake may cover many
+	 * back-to-back accesses (esp. PTIMER read loops). Bounded to avoid a
+	 * livelock hog; if a client is hammering the doorbell the next wake picks
+	 * up where we left off.
+	 */
+	if (db_mmio_fn) {
+		int drained, rounds = 0;
+		do {
+			drained = 0;
+			for (vm = 0; vm < SEV_GPU_MAX_VMS; vm++) {
+				struct sev_gpu_data_dev *dd = data_devs[vm];
+				if (dd)
+					drained += sev_gpu_dbring_service(dd);
+			}
+		} while (drained && ++rounds < 4096);
+	}
 
 	for (;;) {
 		if (sev_gpu_scan_and_grant(d)) {
@@ -865,6 +1065,35 @@ void rpc_service_slot(u8 vm, sev_gpu_rpc_slot_t *slot)
 	slot->ret = 0;
 
 	/*
+	 * SEV-DIAG: GET_WORK_SUBMIT_TOKEN (0xc36f0108) leaves a single 4-byte OUT
+	 * param -- the token libcuda writes to the usermode doorbell (+0x90). Read
+	 * it from the SHARED staging slot the RM just wrote in place: this is the
+	 * exact byte the client copies back to CUDA. Compare with the RM-stored
+	 * token (kernel_channel.c GET_WORK_SUBMIT_TOKEN trace) to see whether the
+	 * store reached shared memory, and with the client's delivered-token print
+	 * to see whether it survived the cross-VM read.
+	 */
+	if (slot->cmd == RPC_NV_ESC_RM_CONTROL && nested_ok && n >= 1 &&
+	    dd && dd->mem && size >= RPC_NVOS54_CMD_OFF + 4 &&
+	    slot->buffers[0].parent == SEV_GPU_RPC_PARENT_TOPLEVEL &&
+	    slot->buffers[0].size >= 4 &&
+	    slot->buffers[0].staging_off + 4 <= dd->mem_size) {
+		u32 ctrl_cmd = 0;
+
+		memcpy(&ctrl_cmd, slot->inline_arg + RPC_NVOS54_CMD_OFF, 4);
+		if (ctrl_cmd == 0xc36f0108u) {
+			u32 tok = 0;
+
+			memcpy_fromio(&tok, (u8 __iomem *)dd->mem +
+				      slot->buffers[0].staging_off, 4);
+			pr_info("sev_gpu: GET_WORK_SUBMIT_TOKEN shared-staging token=0x%x staging_off=0x%llx rm_status=0x%x\n",
+				tok,
+				(unsigned long long)slot->buffers[0].staging_off,
+				(u32)slot->rm_status);
+		}
+	}
+
+	/*
 	 * Scrub the patched kernel VAs back to their staging offsets so we never
 	 * publish kernel addresses into shared memory. Top-level pointers live in
 	 * the inline arg (republished in the slot copy); level-2 pointers live in
@@ -882,6 +1111,49 @@ void rpc_service_slot(u8 vm, sev_gpu_rpc_slot_t *slot)
 
 			memcpy_toio((u8 __iomem *)dd->mem + p->staging_off + b->struct_off,
 				    &b->staging_off, 8);
+		}
+	}
+
+	/*
+	 * Phase A (A0): on a MAP_MEMORY reply, publish the mmap-context facts so
+	 * the client can build a real fd-attached context (A1) instead of the
+	 * doorbell one-shot. The driver's shadow-db hook already substituted the
+	 * client-space shadow GPA into pLinearAddress (inline_arg+32); we read it
+	 * back along with the REAL mapping length (inline_arg+24) and flags
+	 * (inline_arg+44), then classify.
+	 *
+	 * NOT every intercepted MAP_MEMORY is the 64 KiB HOPPER_USERMODE_A doorbell.
+	 * CUDA also maps the RM params/notification region on the ctl node (a larger,
+	 * e.g. 2 MiB, mapping). Hard-coding doorbell size/kind makes
+	 * nv_add_mapping_context_to_file() reject the later mmap with
+	 * NV_ERR_INVALID_ARGUMENT (0x1f) because the context size (64 KiB) disagrees
+	 * with the actual mmap length. So use the request's length, and derive kind
+	 * from it: exactly the 64 KiB usermode window => DOORBELL (device node);
+	 * anything else => PARAMS on the ctl node.
+	 */
+	slot->mm_valid = 0;
+	if (slot->cmd == 0x4e /* NV_ESC_RM_MAP_MEMORY */ && slot->rm_status == 0) {
+		u64 shadow_gpa = 0;
+		u64 length = 0;
+		u32 flags = 0;
+
+		memcpy(&length,     slot->inline_arg + 24, 8); /* NVOS33 length     */
+		memcpy(&shadow_gpa, slot->inline_arg + 32, 8); /* pLinearAddress    */
+		memcpy(&flags,      slot->inline_arg + 44, 4); /* NVOS33 flags      */
+		if (shadow_gpa && length) {
+			bool is_doorbell = (length == SEV_GPU_MM_DOORBELL_SIZE);
+
+			slot->mm_valid      = 1;
+			slot->mm_kind       = is_doorbell ? SEV_GPU_MM_KIND_DOORBELL
+							  : SEV_GPU_MM_KIND_PARAMS;
+			slot->mm_shadow_gpa = shadow_gpa;
+			slot->mm_size       = length;      /* the REAL mapping size */
+			slot->mm_caching    = SEV_GPU_MM_CACHING_DEFAULT;
+			/* NVOS33_FLAGS_ACCESS: 0=RW,1=RO,2=WO -> NV_PROTECT bits. */
+			slot->mm_prot       = ((flags & 0x3u) == 1u) ? 0x1u  /* R  */
+					     : ((flags & 0x3u) == 2u) ? 0x2u  /* W  */
+					     :                          0x3u; /* RW */
+			slot->mm_is_ctl     = is_doorbell ? 0u : 1u;
 		}
 	}
 

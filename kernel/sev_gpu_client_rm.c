@@ -420,6 +420,20 @@ u32 sev_gpu_rm_forward(u32 cmd, void *arg, u32 size)
 		if (size && arg)
 			memcpy(arg, slot->inline_arg, size);
 
+		/* DIAG: for MAP_MEMORY, dump what the reply actually carries so we
+		 * can see why the 0x4e branch does/doesn't store the doorbell pfn. */
+		if (cmd == 0x4e) {
+			u64 dg = 0; u32 rst = 0;
+			memcpy(&dg,  slot->inline_arg + 32, 8);
+			memcpy(&rst, slot->inline_arg + 40, 4);
+			pr_info("sev_gpu: DIAG 0x4e reply: cmd=0x%x size=%u state=%u "
+				"slot_rm_status=0x%llx inline_shadow_gpa=0x%llx "
+				"inline_rm_status=0x%x transport_status=0x%x\n",
+				cmd, size, state,
+				(unsigned long long)slot->rm_status,
+				(unsigned long long)dg, rst, status);
+		}
+
 		/* Log every RM_CONTROL reply with its ctrl_cmd and op_status so we
 		 * can see the full CUDA init sequence without rate-limiter blindness.
 		 * NVOS54.status is at offset 28; NVOS64.status is at offset 40. */
@@ -434,6 +448,23 @@ u32 sev_gpu_rm_forward(u32 cmd, void *arg, u32 size)
 			else
 				pr_info("sev_gpu: RM-RPC CTRL reply ctrl_cmd=0x%x ok\n",
 					ctrl_cmd);
+			/*
+			 * SEV-DIAG: for GET_WORK_SUBMIT_TOKEN (0xc36f0108) the 4-byte
+			 * pParams IS the token libcuda writes to the usermode doorbell.
+			 * The manager wrote it in place in our data region; read it back
+			 * from the same staging slot the OUT copy-out below hands to CUDA,
+			 * so a real token is distinguishable from a stale 0.
+			 */
+			if (ctrl_cmd == 0xc36f0108u && nbn >= 1 && dd && dd->mem &&
+			    nb[0].size >= 4 &&
+			    nb[0].staging_off + 4 <= dd->mem_size) {
+				u32 tok = 0;
+
+				memcpy_fromio(&tok, (u8 __iomem *)dd->mem +
+					      nb[0].staging_off, 4);
+				pr_info("sev_gpu: GET_WORK_SUBMIT_TOKEN delivered to CUDA token=0x%x staging_off=0x%llx\n",
+					tok, (unsigned long long)nb[0].staging_off);
+			}
 		} else if (cmd == RPC_NV_ESC_RM_ALLOC && size >= 44) {
 			u32 hClass = 0, op_status = 0;
 			memcpy(&hClass,    slot->inline_arg + 12, 4);
@@ -644,6 +675,3 @@ out:
 	kfree(t);
 	return ret;
 }
-
-
-

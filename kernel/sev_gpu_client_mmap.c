@@ -8,6 +8,7 @@
 #include <linux/io.h>
 #include "sev_gpu_manager.h"
 #include "sev_gpu_regions.h"
+#include "sev_gpu_rpc.h"
 #include "sev_gpu_state.h"
 #include "sev_gpu_client_mmap.h"
 
@@ -20,6 +21,37 @@ static sev_gpu_unregister_mmap_redirect_t mmap_unregister_fn;
 extern void sev_gpu_register_mmap_redirect(
 	int (*fn)(u64 phys, u64 size, unsigned long *pfn_out));
 extern void sev_gpu_unregister_mmap_redirect(void);
+
+/*
+ * Phase A (A2): UD-window provider registration (nvidia.ko-exported).
+ */
+static void (*ud_window_unregister_fn)(void);
+extern void sev_gpu_register_ud_window(int (*fn)(u64 *base, u64 *size));
+extern void sev_gpu_unregister_ud_window(void);
+
+/*
+ * A2: report this client's shadow usermode-doorbell aperture so nvidia.ko can
+ * set nv->ud. Base = client data-region BAR2 GPA + compute_doorbell_off; size =
+ * the 64 KiB HOPPER_USERMODE_A window. Returns 0 on success, -errno if the
+ * client's region isn't known yet (nvidia.ko then leaves nv->ud unset).
+ */
+int sev_gpu_ud_window_impl(u64 *base, u64 *size)
+{
+	struct sev_gpu_data_dev *dd;
+	u64 off;
+
+	if (!base || !size)
+		return -EINVAL;
+	dd = data_devs[0];
+	if (!dd || !dd->mem_phys || !dd->mem_size)
+		return -ENODEV;
+	off = compute_doorbell_off(dd->mem_size);
+	if (!off)
+		return -ENODEV;
+	*base = (u64)dd->mem_phys + off;
+	*size = SEV_GPU_MM_DOORBELL_SIZE;
+	return 0;
+}
 
 
 
@@ -96,10 +128,33 @@ void mmap_client_bind_nvidia(void)
 	reg(sev_gpu_mmap_redirect_impl);
 	symbol_put(sev_gpu_register_mmap_redirect);
 	pr_info("sev_gpu: registered mmap redirect with nvidia.ko\n");
+
+	/*
+	 * Phase A (A2): register the UD-window provider so nvidia.ko can set
+	 * nv->ud on the client (making native IS_UD_OFFSET classify the doorbell
+	 * mapping). The window is this client's shadow usermode aperture:
+	 * data_devs[0]->mem_phys + compute_doorbell_off(mem_size), 64 KiB.
+	 */
+	{
+		void (*reg_ud)(int (*fn)(u64 *base, u64 *size)) =
+			symbol_get(sev_gpu_register_ud_window);
+		if (reg_ud) {
+			ud_window_unregister_fn =
+				symbol_get(sev_gpu_unregister_ud_window);
+			reg_ud(sev_gpu_ud_window_impl);
+			symbol_put(sev_gpu_register_ud_window);
+			pr_info("sev_gpu: registered UD-window provider with nvidia.ko\n");
+		}
+	}
 }
 
 void mmap_client_unbind_nvidia(void)
 {
+	if (ud_window_unregister_fn) {
+		ud_window_unregister_fn();
+		symbol_put(sev_gpu_unregister_ud_window);
+		ud_window_unregister_fn = NULL;
+	}
 	if (mmap_unregister_fn) {
 		mmap_unregister_fn();
 		symbol_put(sev_gpu_unregister_mmap_redirect);

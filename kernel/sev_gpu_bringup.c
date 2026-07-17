@@ -18,6 +18,27 @@ static bool usermode_timer_armed;
 static u32 bringup_ch[SEV_GPU_MAX_VMS][SEV_GPU_BRINGUP_MAX_CH][2]; /* [hClient,hChannel] */
 static u32 bringup_nch[SEV_GPU_MAX_VMS];
 
+/*
+ * Accessor so the doorbell handler (sched.c) can iterate the compute channels
+ * tracked for a VM and submit work on them when a doorbell rings -- the
+ * doorbell-driven-submit experiment. Returns the count; fills h_client/h_channel
+ * for index i (0..count-1).
+ */
+u32 sev_gpu_bringup_get_channels(u32 vm, u32 i, u32 *h_client, u32 *h_channel)
+{
+	u32 n;
+
+	if (vm >= SEV_GPU_MAX_VMS)
+		return 0;
+	n = READ_ONCE(bringup_nch[vm]);
+	if (i < n && i < SEV_GPU_BRINGUP_MAX_CH) {
+		if (h_client)  *h_client  = bringup_ch[vm][i][0];
+		if (h_channel) *h_channel = bringup_ch[vm][i][1];
+	}
+	return n;
+}
+
+
 
 /* Arm (or re-arm) the bring-up doorbell watch for a replay channel. */
 void sev_gpu_bringup_arm(u32 vm, u32 h_client, u32 h_channel)

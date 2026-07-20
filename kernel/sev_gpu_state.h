@@ -226,6 +226,10 @@ int sev_gpu_compute_carve(struct sev_gpu_data_dev *dd, u32 idx,
 void sev_gpu_bringup_arm(u32 vm, u32 h_client, u32 h_channel);
 void sev_gpu_bringup_disarm(u32 vm);
 bool sev_gpu_bringup_poll(void);
+void bringup_all(void);
+
+/* Manager-to-client native OS-event completion relay (defined in main). */
+int sev_gpu_event_drain(struct sev_gpu_dev *d);
 
 
 

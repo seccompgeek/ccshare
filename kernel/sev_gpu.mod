@@ -1,0 +1,12 @@
+/home/martin/workspace/sev-changes/kernel/sev_gpu_manager.o
+/home/martin/workspace/sev-changes/kernel/sev_gpu_crypto.o
+/home/martin/workspace/sev-changes/kernel/sev_gpu_kmb.o
+/home/martin/workspace/sev-changes/kernel/sev_gpu_handshake.o
+/home/martin/workspace/sev-changes/kernel/sev_gpu_xport_channel.o
+/home/martin/workspace/sev-changes/kernel/sev_gpu_client_mmap.o
+/home/martin/workspace/sev-changes/kernel/sev_gpu_client_rm.o
+/home/martin/workspace/sev-changes/kernel/sev_gpu_manager_exec.o
+/home/martin/workspace/sev-changes/kernel/sev_gpu_manager_sched.o
+/home/martin/workspace/sev-changes/kernel/sev_gpu_bringup.o
+/home/martin/workspace/sev-changes/kernel/sev_gpu_chardev.o
+/home/martin/workspace/sev-changes/kernel/sev_gpu_manager_mmap.o

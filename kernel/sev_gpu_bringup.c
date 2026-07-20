@@ -92,6 +92,16 @@ void sev_gpu_bringup_disarm(u32 vm)
 	}
 }
 
+void bringup_all(void)
+{
+	u32 vm;
+	for (vm = 0; vm < SEV_GPU_MAX_VMS; vm++) {
+		struct sev_gpu_data_dev *dd = data_devs[vm];
+		if (dd)
+			sev_gpu_doorbell_service(dd);
+	}
+}
+
 /*
  * Poll every armed watch once. Returns true if any watch is still active, so
  * the replay poller can shorten its idle sleep and sample the shadow doorbell

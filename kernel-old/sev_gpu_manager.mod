@@ -1,1 +1,0 @@
-./sev_gpu_manager.o

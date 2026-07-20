@@ -18,6 +18,15 @@
 #include "sev_gpu_client_rm.h"
 
 /*
+ * Phase A (A1): nvidia.ko-exported builder for a client-side fd-attached mmap
+ * context. Resolved at runtime via symbol_get so the module still loads if an
+ * older driver without this symbol is present (the call is then skipped).
+ */
+extern int nv_sev_build_mmap_context(u32 fd, u32 kind, u64 shadow_gpa,
+				     u64 size, u32 caching, u32 prot,
+				     u32 is_ctl);
+
+/*
  * Client side: forward one RM escape ioctl to the manager and block for the
  * reply. Marshals {cmd, arg[0..size)} into this client's mailbox, kicks the
  * manager's RPC doorbell, then polls the mailbox until the manager publishes a
@@ -177,6 +186,58 @@ u32 sev_gpu_rm_forward(u32 cmd, void *arg, u32 size)
 				    cmd);
 		return RPC_FWD_ERR;
 	}
+
+	/*
+	 * SEV-DIAG (notifier-mapping probe): an OS-descriptor alloc (esc 0x27,
+	 * hClass NV01_MEMORY_SYSTEM_OS_DESCRIPTOR 0x71) is CUDA registering one of
+	 * its OWN buffers -- e.g. a channel err-context, which is the
+	 * WORK_SUBMIT_TOKEN notifier (RM writes info32 at +0x18). The manager backs
+	 * the GPU side with a carve INSIDE this client's ivshmem region and writes
+	 * the token there. Resolve CUDA's buffer page HERE (we run in CUDA's process
+	 * context, so current->mm is CUDA's) and report whether it physically lives
+	 * inside the ivshmem window [mem_phys, mem_phys+mem_size). If it does NOT,
+	 * CUDA reads a private page the manager never touches -- the notifier write
+	 * is invisible to CUDA. When in_ivshmem=1, 'off' must equal the manager's
+	 * "osdesc carve ... off=0x..." for the same handle to be the SAME page.
+	 */
+	if (cmd == 0x27u /* NV_ESC_RM_ALLOC_MEMORY */ && arg && size >= 48 &&
+	    dd && dd->mem_phys) {
+		u32 osHClass = 0, osHandle = 0;
+		u64 pMemory = 0, osLimit = 0;
+
+		memcpy(&osHandle, (const u8 *)arg + 8, 4);   /* hObjectNew */
+		memcpy(&osHClass, (const u8 *)arg + 12, 4);  /* hClass     */
+		memcpy(&pMemory,  (const u8 *)arg + 24, 8);  /* pMemory VA */
+		memcpy(&osLimit,  (const u8 *)arg + 32, 8);  /* limit      */
+
+		if (osHClass == 0x71u && pMemory) {
+			struct page *pg = NULL;
+			long got = get_user_pages_fast(
+					(unsigned long)pMemory & PAGE_MASK,
+					1, 0, &pg);
+
+			if (got == 1 && pg) {
+				u64 phys = page_to_phys(pg) +
+					   ((u64)pMemory & ~PAGE_MASK);
+				u64 base = (u64)dd->mem_phys;
+				u64 end  = base + (u64)dd->mem_size;
+				int in_shm = (phys >= base && phys < end);
+
+				pr_info("sev_gpu: osdesc-map-probe handle=0x%x userVA=0x%llx clientPhys=0x%llx in_ivshmem=%d off=0x%llx size=0x%llx\n",
+					osHandle, (unsigned long long)pMemory,
+					(unsigned long long)phys, in_shm,
+					in_shm ? (unsigned long long)(phys - base)
+					       : 0ULL,
+					(unsigned long long)(osLimit + 1));
+				put_page(pg);
+			} else {
+				pr_info("sev_gpu: osdesc-map-probe handle=0x%x userVA=0x%llx UNRESOLVED gup=%ld (special/PFNMAP mapping?)\n",
+					osHandle, (unsigned long long)pMemory,
+					got);
+			}
+		}
+	}
+
 
 	/*
 	 * Publish the client's BAR2 GPA once so the manager's shadow_db can
@@ -420,20 +481,6 @@ u32 sev_gpu_rm_forward(u32 cmd, void *arg, u32 size)
 		if (size && arg)
 			memcpy(arg, slot->inline_arg, size);
 
-		/* DIAG: for MAP_MEMORY, dump what the reply actually carries so we
-		 * can see why the 0x4e branch does/doesn't store the doorbell pfn. */
-		if (cmd == 0x4e) {
-			u64 dg = 0; u32 rst = 0;
-			memcpy(&dg,  slot->inline_arg + 32, 8);
-			memcpy(&rst, slot->inline_arg + 40, 4);
-			pr_info("sev_gpu: DIAG 0x4e reply: cmd=0x%x size=%u state=%u "
-				"slot_rm_status=0x%llx inline_shadow_gpa=0x%llx "
-				"inline_rm_status=0x%x transport_status=0x%x\n",
-				cmd, size, state,
-				(unsigned long long)slot->rm_status,
-				(unsigned long long)dg, rst, status);
-		}
-
 		/* Log every RM_CONTROL reply with its ctrl_cmd and op_status so we
 		 * can see the full CUDA init sequence without rate-limiter blindness.
 		 * NVOS54.status is at offset 28; NVOS64.status is at offset 40. */
@@ -448,23 +495,6 @@ u32 sev_gpu_rm_forward(u32 cmd, void *arg, u32 size)
 			else
 				pr_info("sev_gpu: RM-RPC CTRL reply ctrl_cmd=0x%x ok\n",
 					ctrl_cmd);
-			/*
-			 * SEV-DIAG: for GET_WORK_SUBMIT_TOKEN (0xc36f0108) the 4-byte
-			 * pParams IS the token libcuda writes to the usermode doorbell.
-			 * The manager wrote it in place in our data region; read it back
-			 * from the same staging slot the OUT copy-out below hands to CUDA,
-			 * so a real token is distinguishable from a stale 0.
-			 */
-			if (ctrl_cmd == 0xc36f0108u && nbn >= 1 && dd && dd->mem &&
-			    nb[0].size >= 4 &&
-			    nb[0].staging_off + 4 <= dd->mem_size) {
-				u32 tok = 0;
-
-				memcpy_fromio(&tok, (u8 __iomem *)dd->mem +
-					      nb[0].staging_off, 4);
-				pr_info("sev_gpu: GET_WORK_SUBMIT_TOKEN delivered to CUDA token=0x%x staging_off=0x%llx\n",
-					tok, (unsigned long long)nb[0].staging_off);
-			}
 		} else if (cmd == RPC_NV_ESC_RM_ALLOC && size >= 44) {
 			u32 hClass = 0, op_status = 0;
 			memcpy(&hClass,    slot->inline_arg + 12, 4);
@@ -478,29 +508,53 @@ u32 sev_gpu_rm_forward(u32 cmd, void *arg, u32 size)
 					hClass);
 		} else if (cmd == 0x4e /* NV_ESC_RM_MAP_MEMORY */ && size >= 44) {
 			/*
-			 * The manager intercepted MAP_MEMORY for the
-			 * HOPPER_USERMODE_A object and returned the shadow
-			 * doorbell GPA as pLinearAddress.  libcuda.so will call
-			 * mmap(fd, 0) immediately after (not mmap(fd, shadow_gpa)
-			 * -- offset=0 is the standard NVIDIA convention).  Store
-			 * the PFN so sev_gpu_mmap_redirect_impl can serve it.
+			 * Phase A (A1): build a REAL per-fd mmap context from the
+			 * manager's reply, instead of the racy doorbell_mmap_pfn
+			 * one-shot. The manager ran the real RM and returned the
+			 * mapping facts in the slot's mm_* block (A0); we hand them
+			 * to nvidia.ko's nv_sev_build_mmap_context so the later
+			 * mmap(fd,off) resolves through the NATIVE nvidia_mmap_helper
+			 * path (correct caching + IS_REG/IS_FB/IS_UD classification).
+			 *
+			 * The MAP_MEMORY escape (arg) is nv_ioctl_nvos33_parameters_
+			 * with_fd = { NVOS33_PARAMETERS(48B); int fd; }, so the fd is
+			 * at arg + 48. NVOS33 flags (access bits) are at arg + 44.
 			 */
 			u32 rm_status = 0;
-			u64 shadow_gpa = 0;
-			memcpy(&shadow_gpa, slot->inline_arg + 32, 8); /* pLinearAddress */
-			memcpy(&rm_status,  slot->inline_arg + 40, 4); /* status */
-			if (!rm_status && shadow_gpa) {
+			memcpy(&rm_status, slot->inline_arg + 40, 4); /* status */
+
+			if (!rm_status && slot->mm_valid) {
+				int fd = -1;
+				int (*build)(u32, u32, u64, u64, u32, u32, u32);
+
+				if (arg && size >= 52)
+					memcpy(&fd, (const u8 *)arg + 48, 4); /* fd */
+
+				build = symbol_get(nv_sev_build_mmap_context);
 				WRITE_ONCE(doorbell_mmap_pfn,
-					   (unsigned long)(shadow_gpa >> PAGE_SHIFT));
-				pr_info("sev_gpu: MAP_MEMORY reply: stored doorbell"
-					" pfn=0x%lx (shadow_gpa=0x%llx)\n",
-					(unsigned long)(shadow_gpa >> PAGE_SHIFT),
-					(unsigned long long)shadow_gpa);
+					   (unsigned long)(slot->mm_shadow_gpa >> PAGE_SHIFT));
+				if (build && fd >= 0) {
+					int rc = build((u32)fd, slot->mm_kind,
+						       slot->mm_shadow_gpa,
+						       slot->mm_size,
+						       slot->mm_caching,
+						       slot->mm_prot,
+						       slot->mm_is_ctl);
+					pr_info("sev_gpu: MAP_MEMORY ctx fd=%d kind=%u "
+						"gpa=0x%llx size=0x%llx rc=%d\n",
+						fd, slot->mm_kind,
+						(unsigned long long)slot->mm_shadow_gpa,
+						(unsigned long long)slot->mm_size, rc);
+				} else if (fd < 0) {
+					pr_warn("sev_gpu: MAP_MEMORY reply: no fd in escape"
+						" (size=%u); cannot build context\n", size);
+				}
+				if (build)
+					symbol_put(nv_sev_build_mmap_context);
 			} else {
-				pr_warn("sev_gpu: MAP_MEMORY reply: shadow_gpa=0x%llx"
+				pr_warn("sev_gpu: MAP_MEMORY reply: mm_valid=%u"
 					" rm_status=0x%x transport=0x%x\n",
-					(unsigned long long)shadow_gpa,
-					rm_status, status);
+					slot->mm_valid, rm_status, status);
 			}
 		} else {
 			if (status)

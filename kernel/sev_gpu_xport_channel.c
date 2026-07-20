@@ -158,7 +158,7 @@ void __iomem *rpc_ctrl_mailbox(u8 vm)
 
 	/* Manager: index the target client's instance. Client: its own. */
 	d = chan_devs[vm];
-	if (!d)
+	if (!d && ctrl_dev && !ctrl_dev->is_manager)
 		d = ctrl_dev;               /* client side: single instance */
 	if (!d || !d->shmem)
 		return NULL;
@@ -252,10 +252,14 @@ irqreturn_t sev_gpu_channel_irq(int irq, void *data)
 				queue_work(d->rpc_wq, &d->rpc_work);
 		}
 	} else {
-		/* Manager completed our request. */
+		/*
+		 * The channel has one shared completion MSI for RM-RPC replies,
+		 * grants, and relayed NVIDIA OS events. It cannot use the legacy
+		 * grant-vector poll optimization: masking after an RPC reply would
+		 * prevent a later asynchronous OS event from ever being drained.
+		 */
 		if (status & SEV_CH_IRQ_COMPLETION) {
-			if (atomic_cmpxchg(&d->cli_polling, 0, 1) == 0)
-				disable_irq_nosync(pci_irq_vector(d->pdev, 0));
+			sev_gpu_event_drain(d);
 			wake_up_interruptible(&d->grant_wq);
 		}
 	}

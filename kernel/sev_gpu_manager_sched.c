@@ -209,17 +209,7 @@ int sev_gpu_dbring_service(struct sev_gpu_data_dev *dd)
 
 	if (op == SEV_GPU_DBRING_OP_WRITE) {
 		//@kymartin temporally forced
-		if(page_off == 0x90){
-			val = 0x40040003;
-			rc = db_mmio_fn(1, page_off, val, NULL);
-			rc = db_mmio_fn(1, page_off, val, NULL);
-			rc = db_mmio_fn(1, page_off, val, NULL);
-			sev_gpu_do_submit_work(0, 0xc1d00010, 0x5c0000d9, true);
-			sev_gpu_do_submit_work(0, 0xc1d00010, 0x5c0000d9, true);
-			sev_gpu_do_submit_work(0, 0xc1d00010, 0x5c0000d9, true);
-		}else {
-			rc = db_mmio_fn(1, page_off, val, NULL);
-		}
+		rc = db_mmio_fn(1, page_off, val, NULL);
 		pr_info_ratelimited(
 			"sev_gpu: db-replay vm=%u WRITE off=0x%x val=0x%08x rc=0x%x\n",
 			dd->client_vm_id, page_off, val, rc);
@@ -1395,7 +1385,7 @@ int rpc_thread_fn(void *unused)
 		 * shadow ivshmem page (a plain memory write raises no MSI-X, so it
 		 * must be polled). While a watch is armed, sample finely.
 		 */
-		watching = sev_gpu_bringup_poll();
+		//watching = sev_gpu_bringup_poll();
 
 		if (!did)
 			wait_event_interruptible_timeout(rpc_wq,

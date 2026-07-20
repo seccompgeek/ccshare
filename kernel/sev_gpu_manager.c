@@ -359,6 +359,178 @@ u64 osdesc_2m_off[SEV_GPU_MAX_VMS];
 u64 userd_2m_off[SEV_GPU_MAX_VMS];
 DEFINE_MUTEX(reg_lock);
 
+typedef void (*sev_gpu_event_relay_t)(u32 client_id,
+				      u32 h_event_client,
+				      u32 h_event,
+				      u32 event_fd,
+				      u32 notify_index,
+				      u32 info32,
+				      u16 info16,
+				      u8 data_valid);
+typedef u32 (*sev_gpu_client_post_event_t)(u32 h_event_client,
+					  u32 h_event,
+					  u32 event_fd,
+					  u32 notify_index,
+					  u32 info32,
+					  u16 info16,
+					  u8 data_valid);
+
+static DEFINE_SPINLOCK(event_ring_lock);
+static bool event_ring_ready[SEV_GPU_MAX_VMS];
+static sev_gpu_client_post_event_t client_event_post_fn;
+static void (*event_relay_unregister_fn)(void);
+
+extern void sev_gpu_register_event_relay(sev_gpu_event_relay_t fn);
+extern void sev_gpu_unregister_event_relay(void);
+extern u32 sev_gpu_client_post_event(u32 h_event_client, u32 h_event,
+				     u32 event_fd, u32 notify_index,
+				     u32 info32, u16 info16, u8 data_valid);
+
+static sev_gpu_event_ring_t __iomem *event_ring_for_dev(struct sev_gpu_dev *d)
+{
+	BUILD_BUG_ON(sizeof(sev_gpu_event_ring_t) != SEV_GPU_EVENT_RING_SIZE);
+
+	if (!d || !d->mem ||
+	    d->mem_size < SEV_GPU_EVENT_RING_OFF + SEV_GPU_EVENT_RING_SIZE)
+		return NULL;
+
+	return (sev_gpu_event_ring_t __iomem *)(d->mem +
+						 SEV_GPU_EVENT_RING_OFF);
+}
+
+static void sev_gpu_event_publish(u32 client_id, u32 h_event_client,
+				  u32 h_event, u32 event_fd,
+				  u32 notify_index, u32 info32,
+				  u16 info16, u8 data_valid)
+{
+	sev_gpu_event_ring_t __iomem *ring;
+	sev_gpu_event_entry_t __iomem *entry;
+	struct sev_gpu_data_dev *dd;
+	struct sev_gpu_dev *signal_dev;
+	unsigned long flags;
+	u32 prod, cons, packed;
+
+	if (client_id >= SEV_GPU_MAX_VMS || !manager)
+		return;
+	dd = READ_ONCE(data_devs[client_id]);
+	ring = event_ring_for_dev(dd);
+	if (!ring) {
+		pr_err_ratelimited("sev_gpu: OS-event relay has no data region for vm %u\n",
+				   client_id);
+		return;
+	}
+
+	spin_lock_irqsave(&event_ring_lock, flags);
+	if (!event_ring_ready[client_id] ||
+	    ioread32(&ring->magic) != SEV_GPU_EVENT_RING_MAGIC ||
+	    ioread32(&ring->version) != SEV_GPU_EVENT_RING_VERSION) {
+		memset_io(ring, 0, SEV_GPU_EVENT_RING_SIZE);
+		iowrite32(SEV_GPU_EVENT_RING_VERSION, &ring->version);
+		wmb();
+		iowrite32(SEV_GPU_EVENT_RING_MAGIC, &ring->magic);
+		event_ring_ready[client_id] = true;
+	}
+
+	prod = ioread32(&ring->prod);
+	cons = ioread32(&ring->cons);
+	if ((u32)(prod - cons) >= SEV_GPU_EVENT_RING_CAPACITY) {
+		iowrite32(ioread32(&ring->dropped) + 1, &ring->dropped);
+		spin_unlock_irqrestore(&event_ring_lock, flags);
+		pr_err_ratelimited("sev_gpu: OS-event relay ring full vm=%u hEvent=0x%x\n",
+				   client_id, h_event);
+		return;
+	}
+
+	entry = &ring->entries[prod % SEV_GPU_EVENT_RING_CAPACITY];
+	packed = (u32)info16 |
+		 (data_valid ? SEV_GPU_EVENT_DATA_VALID : 0);
+	iowrite32(h_event_client, &entry->h_event_client);
+	iowrite32(h_event,        &entry->h_event);
+	iowrite32(event_fd,       &entry->event_fd);
+	iowrite32(notify_index,   &entry->notify_index);
+	iowrite32(info32,         &entry->info32);
+	iowrite32(packed,         &entry->info16_flags);
+	wmb();
+	iowrite32(prod + 1, &ring->prod);
+	spin_unlock_irqrestore(&event_ring_lock, flags);
+
+	/* Unified channel: dd carries signalling too. Legacy ivshmem: ring the
+	 * separate control device while the record remains in dd's private BAR2. */
+	signal_dev = dd->regs ? dd : READ_ONCE(ctrl_dev);
+	if (signal_dev)
+		ivshmem_ring(signal_dev, (u16)client_id,
+			     IVSHMEM_VECTOR_GRANT_READY);
+	else
+		pr_err_ratelimited("sev_gpu: OS-event relay queued without a signalling device vm=%u\n",
+				   client_id);
+	pr_info_ratelimited("sev_gpu: relayed OS event -> vm=%u hEvent=0x%x fd=%u index=0x%x\n",
+			    client_id, h_event, event_fd, notify_index);
+}
+
+int sev_gpu_event_drain(struct sev_gpu_dev *d)
+{
+	sev_gpu_event_ring_t __iomem *ring;
+	sev_gpu_client_post_event_t post;
+	struct sev_gpu_dev *ring_dev;
+	u32 prod, cons;
+	int drained = 0;
+
+	if (!d || d->is_manager)
+		return 0;
+	/* Legacy ivshmem IRQs arrive on ctrl_dev while the completion ring lives
+	 * in data_devs[0]. Under the unified channel these pointers are identical. */
+	ring_dev = READ_ONCE(data_devs[0]);
+	if (!ring_dev)
+		ring_dev = d;
+	ring = event_ring_for_dev(ring_dev);
+	if (!ring || ioread32(&ring->magic) != SEV_GPU_EVENT_RING_MAGIC ||
+	    ioread32(&ring->version) != SEV_GPU_EVENT_RING_VERSION)
+		return 0;
+
+	post = READ_ONCE(client_event_post_fn);
+	if (!post) {
+		pr_err_ratelimited("sev_gpu: OS-event completion arrived before nvidia.ko client hook bound\n");
+		return 0;
+	}
+
+	prod = ioread32(&ring->prod);
+	cons = ioread32(&ring->cons);
+	if ((u32)(prod - cons) > SEV_GPU_EVENT_RING_CAPACITY) {
+		pr_err_ratelimited("sev_gpu: OS-event relay ring corrupt prod=%u cons=%u; retaining newest entries\n",
+				   prod, cons);
+		cons = prod - SEV_GPU_EVENT_RING_CAPACITY;
+	}
+
+	rmb();
+	while (cons != prod) {
+		sev_gpu_event_entry_t __iomem *entry =
+			&ring->entries[cons % SEV_GPU_EVENT_RING_CAPACITY];
+		u32 h_event_client = ioread32(&entry->h_event_client);
+		u32 h_event = ioread32(&entry->h_event);
+		u32 event_fd = ioread32(&entry->event_fd);
+		u32 notify_index = ioread32(&entry->notify_index);
+		u32 info32 = ioread32(&entry->info32);
+		u32 packed = ioread32(&entry->info16_flags);
+		u32 status;
+
+		status = post(h_event_client, h_event, event_fd, notify_index,
+			      info32, (u16)packed,
+			      !!(packed & SEV_GPU_EVENT_DATA_VALID));
+		if (status)
+			pr_err_ratelimited("sev_gpu: client OS-event post failed status=0x%x hClient=0x%x hEvent=0x%x fd=%u\n",
+					   status, h_event_client, h_event, event_fd);
+		else
+			pr_info_ratelimited("sev_gpu: client posted relayed OS event hEvent=0x%x fd=%u index=0x%x\n",
+					    h_event, event_fd, notify_index);
+
+		cons++;
+		iowrite32(cons, &ring->cons);
+		drained++;
+	}
+
+	return drained;
+}
+
 /* Shared chardev infrastructure: minor 0 = control, minors 1.. = data. */
 #define SEV_GPU_MINORS	(1 + SEV_GPU_MAX_VMS)
 struct class *sev_gpu_class;
@@ -1025,9 +1197,12 @@ static irqreturn_t sev_gpu_irq_handler(int irq, void *data)
 		break;
 	case IVSHMEM_VECTOR_GRANT_READY:
 		if (!d->is_manager) {
+			int event_count = sev_gpu_event_drain(d);
+
 			/* First grant interrupt switches the waiter to polling;
 			 * mask this vector until WAIT_GRANT re-arms it. */
-			if (atomic_cmpxchg(&d->cli_polling, 0, 1) == 0)
+			if (!event_count &&
+			    atomic_cmpxchg(&d->cli_polling, 0, 1) == 0)
 				disable_irq_nosync(pci_irq_vector(d->pdev,
 						IVSHMEM_VECTOR_GRANT_READY));
 			wake_up_interruptible(&d->grant_wq);
@@ -2231,6 +2406,18 @@ static void rpc_manager_bind_nvidia(void)
 	WRITE_ONCE(rpc_replay_fn, replay);
 	pr_info("sev_gpu: bound nvidia.ko RM replay handler\n");
 
+	{
+		void (*reg_event)(sev_gpu_event_relay_t) =
+			symbol_get(sev_gpu_register_event_relay);
+		if (reg_event) {
+			event_relay_unregister_fn =
+				symbol_get(sev_gpu_unregister_event_relay);
+			reg_event(sev_gpu_event_publish);
+			symbol_put(sev_gpu_register_event_relay);
+			pr_info("sev_gpu: registered OS-event relay with nvidia.ko\n");
+		}
+	}
+
 	reg_db = symbol_get(sev_gpu_register_shadow_db);
 	if (reg_db) {
 		shadow_db_unregister_fn = symbol_get(sev_gpu_unregister_shadow_db);
@@ -2292,6 +2479,11 @@ static void rpc_manager_unbind_nvidia(void)
 {
 	if (!READ_ONCE(rpc_replay_fn))
 		return;
+	if (event_relay_unregister_fn) {
+		event_relay_unregister_fn();
+		symbol_put(sev_gpu_unregister_event_relay);
+		event_relay_unregister_fn = NULL;
+	}
 	WRITE_ONCE(rpc_replay_fn, NULL);
 	if (rpc_replay_teardown) {
 		rpc_replay_teardown();
@@ -3549,6 +3741,11 @@ static void rpc_client_bind_nvidia(void)
 	symbol_put(sev_gpu_register_rm_forwarder);
 	pr_info("sev_gpu: registered RM forwarder with nvidia.ko\n");
 
+	WRITE_ONCE(client_event_post_fn,
+		   symbol_get(sev_gpu_client_post_event));
+	if (READ_ONCE(client_event_post_fn))
+		pr_info("sev_gpu: bound nvidia.ko client OS-event post hook\n");
+
 	{
 		void (*reg_inst)(sev_gpu_kmb_install_t) =
 			symbol_get(sev_gpu_register_kmb_install);
@@ -3579,6 +3776,11 @@ static void rpc_client_unbind_nvidia(void)
 {
 	sev_gpu_usermode_timer_stop();
 	mmap_client_unbind_nvidia();
+
+	if (READ_ONCE(client_event_post_fn)) {
+		WRITE_ONCE(client_event_post_fn, NULL);
+		symbol_put(sev_gpu_client_post_event);
+	}
 
 	if (kmb_install_unregister_fn) {
 		kmb_install_unregister_fn();

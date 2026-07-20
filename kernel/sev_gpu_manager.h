@@ -544,6 +544,42 @@ static inline u64 sev_gpu_dbring_slot_off(u32 vm)
     return SEV_GPU_DBRING_REGION_OFF + (u64)vm * SEV_GPU_DBRING_SLOT_STRIDE;
 }
 
+/*
+ * Manager-to-client OS-event completions. The manager's real RM notifier is
+ * intentionally pointer-free; on completion it publishes this scalar record
+ * and rings the client. The client resolves event_fd against its local
+ * NV_ESC_ALLOC_OS_EVENT state and performs the native nv_post_event wakeup.
+ */
+#define SEV_GPU_EVENT_RING_OFF \
+    (SEV_GPU_DBRING_REGION_OFF + SEV_GPU_DBRING_REGION_SIZE) /* 0x2a1000 */
+#define SEV_GPU_EVENT_RING_SIZE       (4UL * 1024UL)
+#define SEV_GPU_EVENT_RING_MAGIC      0x31524553u /* "SER1" */
+#define SEV_GPU_EVENT_RING_VERSION    1u
+#define SEV_GPU_EVENT_RING_CAPACITY   128u
+#define SEV_GPU_EVENT_DATA_VALID      (1u << 16)
+
+typedef struct {
+    uint32_t h_event_client;
+    uint32_t h_event;
+    uint32_t event_fd;
+    uint32_t notify_index;
+    uint32_t info32;
+    uint32_t info16_flags; /* info16 in bits 15:0; DATA_VALID in bit 16 */
+} __attribute__((packed)) sev_gpu_event_entry_t;
+
+typedef struct {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t prod;
+    uint32_t cons;
+    uint32_t dropped;
+    uint32_t reserved_header[3];
+    sev_gpu_event_entry_t entries[SEV_GPU_EVENT_RING_CAPACITY];
+    uint8_t reserved[SEV_GPU_EVENT_RING_SIZE - 32 -
+                     SEV_GPU_EVENT_RING_CAPACITY *
+                     sizeof(sev_gpu_event_entry_t)];
+} __attribute__((packed)) sev_gpu_event_ring_t;
+
 typedef struct {
     __u32 version;          /* SEV_GPU_CARD_DESC_VERSION                 */
     __u32 valid;            /* 1 once the manager has filled it          */

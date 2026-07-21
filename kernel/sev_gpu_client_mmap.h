@@ -25,6 +25,8 @@
 extern unsigned long doorbell_mmap_pfn;
 
 int  sev_gpu_mmap_redirect_impl(u64 phys, u64 size, unsigned long *pfn_out);
+int  sev_gpu_client_register_user_mmio(struct sev_gpu_dev *d);
+void sev_gpu_client_unregister_user_mmio(struct sev_gpu_dev *d);
 void mmap_client_bind_nvidia(void);
 void mmap_client_unbind_nvidia(void);
 

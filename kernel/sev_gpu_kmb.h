@@ -3,7 +3,7 @@
  * sev_gpu_kmb.h — Key Material Bundle transport: seal/install/send/recv.
  * Depends on crypto (aead/kmb_fp), state (comm_keystore), and the transport
  * mailbox accessor kmb_mailbox() (which stays on the main/transport side
- * because it touches ctrl_dev).
+ * because it resolves the transport mailbox).
  */
 #ifndef SEV_GPU_KMB_H
 #define SEV_GPU_KMB_H
@@ -32,7 +32,7 @@ struct sev_gpu_kmb_aad {
 
 struct sev_gpu_dev;   /* fwd */
 
-/* Transport mailbox accessor — DEFINED in sev_gpu_main.c (touches ctrl_dev). */
+/* Transport mailbox accessor — defined in sev_gpu_main.c. */
 void __iomem *kmb_mailbox(u8 vm);
 extern atomic_t sev_gpu_kmb_pull_seq;
 

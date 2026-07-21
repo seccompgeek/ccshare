@@ -1,323 +1,627 @@
-sev_gpu_manager.o: \
- /home/martin/workspace/sev-changes/kernel/sev_gpu_manager.c \
- include/linux/compiler-version.h include/linux/kconfig.h \
- include/generated/autoconf.h include/linux/compiler_types.h \
- include/linux/compiler_attributes.h include/linux/compiler-gcc.h \
- include/linux/module.h include/linux/list.h include/linux/container_of.h \
- include/linux/build_bug.h include/linux/compiler.h \
- include/linux/compiler_types.h arch/x86/include/generated/asm/rwonce.h \
- include/asm-generic/rwonce.h include/linux/kasan-checks.h \
- include/linux/types.h include/uapi/linux/types.h \
- arch/x86/include/generated/uapi/asm/types.h \
- include/uapi/asm-generic/types.h include/asm-generic/int-ll64.h \
- include/uapi/asm-generic/int-ll64.h \
- arch/x86/include/uapi/asm/bitsperlong.h \
- include/asm-generic/bitsperlong.h include/uapi/asm-generic/bitsperlong.h \
- include/uapi/linux/posix_types.h include/linux/stddef.h \
- include/uapi/linux/stddef.h arch/x86/include/asm/posix_types.h \
- arch/x86/include/uapi/asm/posix_types_64.h \
- include/uapi/asm-generic/posix_types.h include/linux/kcsan-checks.h \
- include/linux/poison.h include/linux/const.h include/vdso/const.h \
- include/uapi/linux/const.h arch/x86/include/asm/barrier.h \
- arch/x86/include/asm/alternative.h include/linux/stringify.h \
- arch/x86/include/asm/asm.h arch/x86/include/asm/extable_fixup_types.h \
- arch/x86/include/asm/nops.h include/asm-generic/barrier.h \
- include/linux/stat.h arch/x86/include/uapi/asm/stat.h \
- include/uapi/linux/stat.h include/linux/time.h include/linux/cache.h \
- include/uapi/linux/kernel.h include/uapi/linux/sysinfo.h \
- arch/x86/include/asm/cache.h include/linux/linkage.h \
- include/linux/export.h arch/x86/include/asm/linkage.h \
- arch/x86/include/asm/ibt.h include/linux/math64.h include/linux/math.h \
- arch/x86/include/asm/div64.h include/asm-generic/div64.h \
- include/vdso/math64.h include/linux/time64.h include/vdso/time64.h \
- include/uapi/linux/time.h include/uapi/linux/time_types.h \
- include/linux/time32.h include/linux/timex.h include/uapi/linux/timex.h \
- include/uapi/linux/param.h arch/x86/include/generated/uapi/asm/param.h \
- include/asm-generic/param.h include/uapi/asm-generic/param.h \
- arch/x86/include/asm/timex.h arch/x86/include/asm/processor.h \
- arch/x86/include/asm/processor-flags.h \
- arch/x86/include/uapi/asm/processor-flags.h include/linux/mem_encrypt.h \
- arch/x86/include/asm/mem_encrypt.h include/linux/init.h \
- include/linux/cc_platform.h arch/x86/include/asm/math_emu.h \
- arch/x86/include/asm/ptrace.h arch/x86/include/asm/segment.h \
- arch/x86/include/asm/page_types.h arch/x86/include/asm/page_64_types.h \
- arch/x86/include/asm/kaslr.h arch/x86/include/uapi/asm/ptrace.h \
- arch/x86/include/uapi/asm/ptrace-abi.h \
- arch/x86/include/asm/paravirt_types.h arch/x86/include/asm/desc_defs.h \
- arch/x86/include/asm/pgtable_types.h \
- arch/x86/include/asm/pgtable_64_types.h arch/x86/include/asm/sparsemem.h \
- arch/x86/include/asm/nospec-branch.h include/linux/static_key.h \
- include/linux/jump_label.h arch/x86/include/asm/jump_label.h \
- include/linux/objtool.h include/linux/objtool_types.h \
- arch/x86/include/asm/cpufeatures.h \
- arch/x86/include/asm/required-features.h \
- arch/x86/include/asm/disabled-features.h \
- arch/x86/include/asm/msr-index.h include/linux/bits.h \
- include/vdso/bits.h include/uapi/linux/bits.h \
- arch/x86/include/asm/unwind_hints.h arch/x86/include/asm/orc_types.h \
- arch/x86/include/uapi/asm/byteorder.h \
- include/linux/byteorder/little_endian.h \
- include/uapi/linux/byteorder/little_endian.h include/linux/swab.h \
- include/uapi/linux/swab.h arch/x86/include/uapi/asm/swab.h \
- include/linux/byteorder/generic.h arch/x86/include/asm/percpu.h \
- include/asm-generic/percpu.h include/linux/threads.h \
- include/linux/percpu-defs.h arch/x86/include/asm/current.h \
- arch/x86/include/asm/asm-offsets.h include/generated/asm-offsets.h \
- arch/x86/include/asm/GEN-for-each-reg.h \
- arch/x86/include/asm/spinlock_types.h \
- include/asm-generic/qspinlock_types.h \
- include/asm-generic/qrwlock_types.h arch/x86/include/asm/proto.h \
- arch/x86/include/uapi/asm/ldt.h arch/x86/include/uapi/asm/sigcontext.h \
- arch/x86/include/asm/cpuid.h arch/x86/include/asm/string.h \
- arch/x86/include/asm/string_64.h arch/x86/include/asm/paravirt.h \
- include/linux/bug.h arch/x86/include/asm/bug.h \
- include/linux/instrumentation.h include/asm-generic/bug.h \
- include/linux/once_lite.h include/linux/panic.h include/linux/printk.h \
- include/linux/stdarg.h include/linux/kern_levels.h \
- include/linux/ratelimit_types.h include/linux/spinlock_types_raw.h \
- include/linux/lockdep_types.h include/linux/dynamic_debug.h \
- include/linux/cpumask.h include/linux/cleanup.h include/linux/kernel.h \
- include/linux/align.h include/linux/array_size.h include/linux/limits.h \
- include/uapi/linux/limits.h include/vdso/limits.h include/linux/bitops.h \
- include/linux/typecheck.h \
- include/asm-generic/bitops/generic-non-atomic.h \
- arch/x86/include/asm/bitops.h arch/x86/include/asm/rmwcc.h \
- include/linux/args.h include/asm-generic/bitops/sched.h \
- arch/x86/include/asm/arch_hweight.h \
- include/asm-generic/bitops/const_hweight.h \
- include/asm-generic/bitops/instrumented-atomic.h \
- include/linux/instrumented.h include/linux/kmsan-checks.h \
- include/asm-generic/bitops/instrumented-non-atomic.h \
- include/asm-generic/bitops/instrumented-lock.h \
- include/asm-generic/bitops/le.h \
- include/asm-generic/bitops/ext2-atomic-setbit.h include/linux/hex.h \
- include/linux/kstrtox.h include/linux/log2.h include/linux/minmax.h \
- include/linux/sprintf.h include/linux/static_call_types.h \
- include/linux/instruction_pointer.h include/linux/wordpart.h \
- include/linux/bitmap.h include/linux/errno.h include/uapi/linux/errno.h \
- arch/x86/include/generated/uapi/asm/errno.h \
- include/uapi/asm-generic/errno.h include/uapi/asm-generic/errno-base.h \
- include/linux/find.h include/linux/string.h include/linux/err.h \
- include/linux/overflow.h include/uapi/linux/string.h \
- include/linux/fortify-string.h include/linux/bitfield.h \
- include/linux/bitmap-str.h include/linux/atomic.h \
- arch/x86/include/asm/atomic.h arch/x86/include/asm/cmpxchg.h \
- arch/x86/include/asm/cmpxchg_64.h arch/x86/include/asm/atomic64_64.h \
- include/linux/atomic/atomic-arch-fallback.h \
- include/linux/atomic/atomic-long.h \
- include/linux/atomic/atomic-instrumented.h include/linux/gfp_types.h \
- include/linux/numa.h arch/x86/include/asm/frame.h \
- arch/x86/include/asm/page.h arch/x86/include/asm/page_64.h \
- include/linux/range.h include/asm-generic/memory_model.h \
- include/linux/pfn.h include/asm-generic/getorder.h \
- arch/x86/include/asm/special_insns.h include/linux/irqflags.h \
- include/linux/irqflags_types.h arch/x86/include/asm/irqflags.h \
- arch/x86/include/asm/fpu/types.h arch/x86/include/asm/vmxfeatures.h \
- arch/x86/include/asm/vdso/processor.h arch/x86/include/asm/shstk.h \
- include/linux/personality.h include/uapi/linux/personality.h \
- arch/x86/include/asm/tsc.h arch/x86/include/asm/cpufeature.h \
- arch/x86/include/asm/msr.h arch/x86/include/asm/msr-index.h \
- arch/x86/include/asm/cpumask.h arch/x86/include/uapi/asm/msr.h \
- include/uapi/linux/ioctl.h arch/x86/include/generated/uapi/asm/ioctl.h \
- include/asm-generic/ioctl.h include/uapi/asm-generic/ioctl.h \
- arch/x86/include/asm/shared/msr.h include/linux/percpu.h \
- include/linux/mmdebug.h include/linux/preempt.h \
- arch/x86/include/asm/preempt.h include/linux/smp.h \
- include/linux/smp_types.h include/linux/llist.h \
- include/linux/thread_info.h include/linux/restart_block.h \
- arch/x86/include/asm/thread_info.h arch/x86/include/asm/smp.h \
- include/linux/tracepoint-defs.h include/vdso/time32.h \
- include/vdso/time.h include/linux/uidgid.h include/linux/uidgid_types.h \
- include/linux/highuid.h include/linux/buildid.h include/linux/kmod.h \
- include/linux/umh.h include/linux/gfp.h include/linux/mmzone.h \
- include/linux/spinlock.h include/linux/bottom_half.h \
- include/linux/lockdep.h arch/x86/include/generated/asm/mmiowb.h \
- include/asm-generic/mmiowb.h include/linux/spinlock_types.h \
- include/linux/rwlock_types.h arch/x86/include/asm/spinlock.h \
- arch/x86/include/asm/qspinlock.h include/asm-generic/qspinlock.h \
- arch/x86/include/asm/qrwlock.h include/asm-generic/qrwlock.h \
- include/linux/rwlock.h include/linux/spinlock_api_smp.h \
- include/linux/rwlock_api_smp.h include/linux/list_nulls.h \
- include/linux/wait.h include/linux/seqlock.h include/linux/mutex.h \
- include/linux/osq_lock.h include/linux/debug_locks.h \
- include/linux/mutex_types.h include/linux/seqlock_types.h \
- include/linux/nodemask.h include/linux/nodemask_types.h \
- include/linux/random.h include/uapi/linux/random.h include/linux/irqnr.h \
- include/uapi/linux/irqnr.h include/linux/prandom.h include/linux/once.h \
- include/linux/pageblock-flags.h include/linux/page-flags-layout.h \
- include/generated/bounds.h include/linux/mm_types.h \
- include/linux/mm_types_task.h arch/x86/include/asm/tlbbatch.h \
- include/linux/auxvec.h include/uapi/linux/auxvec.h \
- arch/x86/include/uapi/asm/auxvec.h include/linux/kref.h \
- include/linux/refcount.h include/linux/refcount_types.h \
- include/linux/rbtree.h include/linux/rbtree_types.h \
- include/linux/rcupdate.h include/linux/context_tracking_irq.h \
- include/linux/rcutree.h include/linux/maple_tree.h include/linux/rwsem.h \
- include/linux/completion.h include/linux/swait.h include/linux/uprobes.h \
- arch/x86/include/asm/uprobes.h include/linux/notifier.h \
- include/linux/srcu.h include/linux/workqueue.h include/linux/timer.h \
- include/linux/ktime.h include/linux/jiffies.h include/vdso/jiffies.h \
- include/generated/timeconst.h include/vdso/ktime.h \
- include/linux/timekeeping.h include/linux/clocksource_ids.h \
- include/linux/debugobjects.h include/linux/timer_types.h \
- include/linux/workqueue_types.h include/linux/rcu_segcblist.h \
- include/linux/srcutree.h include/linux/rcu_node_tree.h \
- include/linux/percpu_counter.h arch/x86/include/asm/mmu.h \
- include/linux/page-flags.h include/linux/local_lock.h \
- include/linux/local_lock_internal.h include/linux/zswap.h \
- include/linux/memory_hotplug.h arch/x86/include/asm/mmzone.h \
- arch/x86/include/asm/mmzone_64.h include/linux/topology.h \
- include/linux/arch_topology.h arch/x86/include/asm/topology.h \
- arch/x86/include/asm/mpspec.h arch/x86/include/asm/mpspec_def.h \
- arch/x86/include/asm/x86_init.h arch/x86/include/asm/apicdef.h \
- include/asm-generic/topology.h include/linux/cpu_smt.h \
- include/linux/sysctl.h include/uapi/linux/sysctl.h include/linux/elf.h \
- arch/x86/include/asm/elf.h arch/x86/include/asm/ia32.h \
- include/linux/compat.h include/linux/sem.h include/uapi/linux/sem.h \
- include/linux/ipc.h include/linux/rhashtable-types.h \
- include/uapi/linux/ipc.h arch/x86/include/generated/uapi/asm/ipcbuf.h \
- include/uapi/asm-generic/ipcbuf.h arch/x86/include/uapi/asm/sembuf.h \
- include/linux/sem_types.h include/linux/socket.h \
- arch/x86/include/generated/uapi/asm/socket.h \
- include/uapi/asm-generic/socket.h \
- arch/x86/include/generated/uapi/asm/sockios.h \
- include/uapi/asm-generic/sockios.h include/uapi/linux/sockios.h \
- include/linux/uio.h include/uapi/linux/uio.h include/uapi/linux/socket.h \
- include/uapi/linux/if.h include/uapi/linux/libc-compat.h \
- include/uapi/linux/hdlc/ioctl.h include/linux/fs.h \
- include/linux/wait_bit.h include/linux/kdev_t.h \
- include/uapi/linux/kdev_t.h include/linux/dcache.h \
- include/linux/rculist.h include/linux/rculist_bl.h \
- include/linux/list_bl.h include/linux/bit_spinlock.h \
- include/linux/lockref.h include/linux/stringhash.h include/linux/hash.h \
- include/linux/path.h include/linux/list_lru.h include/linux/shrinker.h \
- include/linux/xarray.h include/linux/kconfig.h include/linux/sched/mm.h \
- include/linux/sched.h include/uapi/linux/sched.h \
- include/linux/pid_types.h include/linux/shm.h \
- arch/x86/include/asm/shmparam.h include/linux/kmsan_types.h \
- include/linux/plist_types.h include/linux/hrtimer_types.h \
- include/linux/timerqueue_types.h include/linux/seccomp_types.h \
- include/linux/resource.h include/uapi/linux/resource.h \
- arch/x86/include/generated/uapi/asm/resource.h \
- include/asm-generic/resource.h include/uapi/asm-generic/resource.h \
- include/linux/latencytop.h include/linux/sched/prio.h \
- include/linux/sched/types.h include/linux/signal_types.h \
- include/uapi/linux/signal.h arch/x86/include/asm/signal.h \
- arch/x86/include/uapi/asm/signal.h \
- include/uapi/asm-generic/signal-defs.h \
- arch/x86/include/uapi/asm/siginfo.h include/uapi/asm-generic/siginfo.h \
- include/linux/syscall_user_dispatch_types.h \
- include/linux/task_io_accounting.h include/linux/posix-timers_types.h \
- include/uapi/linux/rseq.h include/linux/kcsan.h include/linux/rv.h \
- include/linux/livepatch_sched.h \
- arch/x86/include/generated/asm/kmap_size.h \
- include/asm-generic/kmap_size.h include/linux/sync_core.h \
- arch/x86/include/asm/sync_core.h include/linux/radix-tree.h \
- include/linux/pid.h include/linux/capability.h \
- include/uapi/linux/capability.h include/linux/semaphore.h \
- include/linux/fcntl.h include/uapi/linux/fcntl.h \
- arch/x86/include/generated/uapi/asm/fcntl.h \
- include/uapi/asm-generic/fcntl.h include/uapi/linux/openat2.h \
- include/linux/migrate_mode.h include/linux/percpu-rwsem.h \
- include/linux/rcuwait.h include/linux/sched/signal.h \
- include/linux/signal.h include/linux/sched/jobctl.h \
- include/linux/sched/task.h include/linux/uaccess.h \
- include/linux/fault-inject-usercopy.h arch/x86/include/asm/uaccess.h \
- include/linux/mmap_lock.h arch/x86/include/asm/smap.h \
- arch/x86/include/asm/extable.h arch/x86/include/asm/tlbflush.h \
- include/linux/mmu_notifier.h include/linux/interval_tree.h \
- arch/x86/include/asm/invpcid.h arch/x86/include/asm/pti.h \
- arch/x86/include/asm/pgtable.h arch/x86/include/asm/pkru.h \
- arch/x86/include/asm/fpu/api.h arch/x86/include/asm/coco.h \
- include/asm-generic/pgtable_uffd.h include/linux/page_table_check.h \
- arch/x86/include/asm/pgtable_64.h arch/x86/include/asm/fixmap.h \
- arch/x86/include/uapi/asm/vsyscall.h include/asm-generic/fixmap.h \
- arch/x86/include/asm/pgtable-invert.h arch/x86/include/asm/uaccess_64.h \
- include/asm-generic/access_ok.h include/linux/cred.h include/linux/key.h \
- include/linux/assoc_array.h include/linux/sched/user.h \
- include/linux/ratelimit.h include/linux/posix-timers.h \
- include/linux/alarmtimer.h include/linux/hrtimer.h \
- include/linux/hrtimer_defs.h include/linux/timerqueue.h \
- include/linux/rcu_sync.h include/linux/delayed_call.h \
- include/linux/uuid.h include/linux/errseq.h include/linux/ioprio.h \
- include/linux/sched/rt.h include/linux/iocontext.h \
- include/uapi/linux/ioprio.h include/linux/fs_types.h \
- include/linux/mount.h include/linux/mnt_idmapping.h include/linux/slab.h \
- include/linux/percpu-refcount.h include/linux/kasan.h \
- include/linux/kasan-enabled.h include/linux/kasan-tags.h \
- include/linux/rw_hint.h include/uapi/linux/fs.h include/linux/quota.h \
- include/uapi/linux/dqblk_xfs.h include/linux/dqblk_v1.h \
- include/linux/dqblk_v2.h include/linux/dqblk_qtree.h \
- include/linux/projid.h include/uapi/linux/quota.h \
- include/uapi/linux/aio_abi.h include/uapi/linux/unistd.h \
- arch/x86/include/asm/unistd.h arch/x86/include/uapi/asm/unistd.h \
- arch/x86/include/generated/uapi/asm/unistd_64.h \
- arch/x86/include/generated/asm/unistd_64_x32.h \
- arch/x86/include/generated/asm/unistd_32_ia32.h \
- arch/x86/include/asm/compat.h include/linux/sched/task_stack.h \
- include/uapi/linux/magic.h arch/x86/include/asm/user32.h \
- include/asm-generic/compat.h arch/x86/include/asm/syscall_wrapper.h \
- arch/x86/include/asm/user.h arch/x86/include/asm/user_64.h \
- arch/x86/include/asm/fsgsbase.h arch/x86/include/asm/vdso.h \
- include/uapi/linux/elf.h include/uapi/linux/elf-em.h \
- include/linux/kobject.h include/linux/sysfs.h include/linux/kernfs.h \
- include/linux/idr.h include/linux/kobject_ns.h \
- include/linux/moduleparam.h include/linux/rbtree_latch.h \
- include/linux/error-injection.h include/asm-generic/error-injection.h \
- arch/x86/include/asm/module.h include/asm-generic/module.h \
- arch/x86/include/asm/orc_types.h include/linux/cdev.h \
- include/linux/device.h include/linux/dev_printk.h \
- include/linux/energy_model.h include/linux/sched/cpufreq.h \
- include/linux/sched/topology.h include/linux/sched/idle.h \
- include/linux/sched/sd_flags.h include/linux/ioport.h \
- include/linux/klist.h include/linux/pm.h include/linux/device/bus.h \
- include/linux/device/class.h include/linux/device/driver.h \
- arch/x86/include/asm/device.h include/linux/pm_wakeup.h \
- include/linux/mm.h include/linux/page_ext.h include/linux/stacktrace.h \
- include/linux/stackdepot.h include/linux/page_ref.h \
- include/linux/sizes.h include/linux/pgtable.h include/linux/memremap.h \
- include/linux/huge_mm.h include/linux/sched/coredump.h \
- include/linux/vmstat.h include/linux/vm_event_item.h include/linux/pci.h \
- include/linux/mod_devicetable.h include/uapi/linux/mei.h \
- include/uapi/linux/mei_uuid.h include/linux/interrupt.h \
- include/linux/irqreturn.h include/linux/hardirq.h \
- include/linux/context_tracking_state.h include/linux/ftrace_irq.h \
- include/linux/vtime.h arch/x86/include/asm/hardirq.h \
- arch/x86/include/asm/irq.h arch/x86/include/asm/irq_vectors.h \
- arch/x86/include/asm/sections.h include/asm-generic/sections.h \
- include/linux/io.h arch/x86/include/asm/io.h \
- arch/x86/include/generated/asm/early_ioremap.h \
- include/asm-generic/early_ioremap.h arch/x86/include/asm/shared/io.h \
- include/asm-generic/io.h include/asm-generic/iomap.h \
- include/asm-generic/pci_iomap.h include/linux/logic_pio.h \
- include/linux/fwnode.h include/linux/vmalloc.h \
- arch/x86/include/asm/vmalloc.h arch/x86/include/asm/pgtable_areas.h \
- include/linux/resource_ext.h include/linux/msi_api.h \
- include/uapi/linux/pci.h include/uapi/linux/pci_regs.h \
- include/linux/pci_ids.h include/linux/dmapool.h \
- include/linux/scatterlist.h arch/x86/include/asm/pci.h \
- arch/x86/include/asm/memtype.h include/linux/dma-mapping.h \
- include/linux/dma-direction.h include/linux/delay.h \
- arch/x86/include/asm/delay.h include/asm-generic/delay.h \
- include/crypto/aead.h include/linux/crypto.h include/crypto/hash.h \
- include/crypto/kpp.h include/crypto/ecdh.h include/crypto/algapi.h \
- include/crypto/utils.h arch/x86/include/generated/asm/unaligned.h \
- include/asm-generic/unaligned.h include/linux/unaligned/packed_struct.h \
- include/linux/kthread.h \
- /home/martin/workspace/sev-changes/kernel/sev_gpu_manager.h \
- /home/martin/workspace/sev-changes/kernel/sev_gpu_transport.h \
- /home/martin/workspace/sev-changes/kernel/sev_gpu_rpc.h \
- /home/martin/workspace/sev-changes/kernel/sev_gpu_crypto.h \
- /home/martin/workspace/sev-changes/kernel/sev_gpu_state.h \
- /home/martin/workspace/sev-changes/kernel/sev_gpu_kmb.h \
- /home/martin/workspace/sev-changes/kernel/sev_gpu_handshake.h \
- /home/martin/workspace/sev-changes/kernel/sev_gpu_client_mmap.h \
- /home/martin/workspace/sev-changes/kernel/sev_gpu_manager_mmap.h \
- /home/martin/workspace/sev-changes/kernel/sev_gpu_comm.h \
- /home/martin/workspace/sev-changes/kernel/sev_gpu_client_rm.h \
- /home/martin/workspace/sev-changes/kernel/sev_gpu_nvidia.h \
- /home/martin/workspace/sev-changes/kernel/sev_gpu_manager_exec.h \
- /home/martin/workspace/sev-changes/kernel/sev_gpu_manager_sched.h \
- /home/martin/workspace/sev-changes/kernel/sev_gpu_bringup.h \
- /home/martin/workspace/sev-changes/kernel/sev_gpu_chardev.h \
- /home/martin/workspace/sev-changes/kernel/sev_gpu_regions.h
+sev_gpu_manager.o: sev_gpu_manager.c \
+ /home/martin/AMDSEV/linux/guest/include/linux/compiler-version.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kconfig.h \
+ /home/martin/AMDSEV/linux/guest/include/generated/autoconf.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/compiler_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/compiler_attributes.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/compiler-gcc.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/module.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/list.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/container_of.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/build_bug.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/compiler.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/compiler_types.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/generated/asm/rwonce.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/rwonce.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kasan-checks.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/types.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/types.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/generated/uapi/asm/types.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/asm-generic/types.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/int-ll64.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/asm-generic/int-ll64.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/uapi/asm/bitsperlong.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/bitsperlong.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/asm-generic/bitsperlong.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/posix_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/stddef.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/stddef.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/posix_types.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/uapi/asm/posix_types_64.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/asm-generic/posix_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kcsan-checks.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/poison.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/const.h \
+ /home/martin/AMDSEV/linux/guest/include/vdso/const.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/const.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/barrier.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/alternative.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/stringify.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/objtool.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/objtool_types.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/asm.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/extable_fixup_types.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/bug.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/instrumentation.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/bug.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/once_lite.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/panic.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/printk.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/stdarg.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/init.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kern_levels.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/linkage.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/export.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/linkage.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/ibt.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/ratelimit_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/bits.h \
+ /home/martin/AMDSEV/linux/guest/include/vdso/bits.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/bits.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/overflow.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/limits.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/limits.h \
+ /home/martin/AMDSEV/linux/guest/include/vdso/limits.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/param.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/generated/uapi/asm/param.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/param.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/asm-generic/param.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/spinlock_types_raw.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/spinlock_types.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/qspinlock_types.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/qrwlock_types.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/uapi/asm/byteorder.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/byteorder/little_endian.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/byteorder/little_endian.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/swab.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/swab.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/uapi/asm/swab.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/byteorder/generic.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/lockdep_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/dynamic_debug.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/jump_label.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/cleanup.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/jump_label.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/nops.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/barrier.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/stat.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/uapi/asm/stat.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/stat.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/time.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/cache.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/kernel.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/sysinfo.h \
+ /home/martin/AMDSEV/linux/guest/include/vdso/cache.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/cache.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/math64.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/math.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/div64.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/div64.h \
+ /home/martin/AMDSEV/linux/guest/include/vdso/math64.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/time64.h \
+ /home/martin/AMDSEV/linux/guest/include/vdso/time64.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/time.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/time_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/time32.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/timex.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/timex.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/timex.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/processor.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/processor-flags.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/uapi/asm/processor-flags.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/mem_encrypt.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/mem_encrypt.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/cc_platform.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/math_emu.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/ptrace.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/segment.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/page_types.h \
+ /home/martin/AMDSEV/linux/guest/include/vdso/page.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/page_64_types.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/kaslr.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/uapi/asm/ptrace.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/uapi/asm/ptrace-abi.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/paravirt_types.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/desc_defs.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/pgtable_types.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/pgtable_64_types.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/sparsemem.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/nospec-branch.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/static_key.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/cpufeatures.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/msr-index.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/unwind_hints.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/orc_types.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/percpu.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/args.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/percpu.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/threads.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/percpu-defs.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/asm-offsets.h \
+ /home/martin/AMDSEV/linux/guest/include/generated/asm-offsets.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/GEN-for-each-reg.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/proto.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/uapi/asm/ldt.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/uapi/asm/sigcontext.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/current.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/cpuid/api.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/cpuid/types.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/string.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/string_64.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/paravirt.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/bug.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/cpumask.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kernel.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/align.h \
+ /home/martin/AMDSEV/linux/guest/include/vdso/align.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/array_size.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/bitops.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/typecheck.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/bitops/generic-non-atomic.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/bitops.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/rmwcc.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/bitops/sched.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/arch_hweight.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/bitops/const_hweight.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/bitops/instrumented-atomic.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/instrumented.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kmsan-checks.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/bitops/instrumented-non-atomic.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/bitops/instrumented-lock.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/bitops/le.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/bitops/ext2-atomic-setbit.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/hex.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kstrtox.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/log2.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/minmax.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sprintf.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/static_call_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/instruction_pointer.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/util_macros.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/wordpart.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/bitmap.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/errno.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/errno.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/generated/uapi/asm/errno.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/asm-generic/errno.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/asm-generic/errno-base.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/find.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/string.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/err.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/string.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/fortify-string.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/bitfield.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/bitmap-str.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/cpumask_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/atomic.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/atomic.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/cmpxchg.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/cmpxchg_64.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/atomic64_64.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/atomic/atomic-arch-fallback.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/atomic/atomic-long.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/atomic/atomic-instrumented.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/gfp_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/numa.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/nodemask.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/nodemask_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/random.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/random.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/ioctl.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/generated/uapi/asm/ioctl.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/ioctl.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/asm-generic/ioctl.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/irqnr.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/irqnr.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/frame.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/page.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/page_64.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/range.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/memory_model.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/pfn.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/getorder.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/special_insns.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/irqflags.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/irqflags_types.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/irqflags.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/fpu/types.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/vmxfeatures.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/vdso/processor.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/shstk.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/personality.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/personality.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/tsc.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/cpufeature.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/generated/asm/cpufeaturemasks.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/msr.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/msr-index.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/cpumask.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/uapi/asm/msr.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/shared/msr.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/percpu.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/alloc_tag.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/codetag.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/preempt.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/preempt.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/smp.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/smp_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/llist.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/thread_info.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/restart_block.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/thread_info.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/smp.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/mmdebug.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sched.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/sched.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/pid_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sem_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/shm.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/shmparam.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kmsan_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/mutex_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/osq_lock.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/spinlock_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/rwlock_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/plist_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/hrtimer_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/timerqueue_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/rbtree_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/timer_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/seccomp_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/refcount_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/resource.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/resource.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/generated/uapi/asm/resource.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/resource.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/asm-generic/resource.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/latencytop.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sched/prio.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sched/types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/signal_types.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/signal.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/signal.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/uapi/asm/signal.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/asm-generic/signal-defs.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/uapi/asm/siginfo.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/asm-generic/siginfo.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/syscall_user_dispatch_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/mm_types_task.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/tlbbatch.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/netdevice_xmit.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/task_io_accounting.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/posix-timers_types.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/rseq.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/seqlock_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kcsan.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/rv.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/uidgid_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/tracepoint-defs.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/generated/asm/kmap_size.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/kmap_size.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sched/ext.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/spinlock.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/bottom_half.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/lockdep.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/generated/asm/mmiowb.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/mmiowb.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/spinlock.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/qspinlock.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/qspinlock.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/qrwlock.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/qrwlock.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/rwlock.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/spinlock_api_smp.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/rwlock_api_smp.h \
+ /home/martin/AMDSEV/linux/guest/include/vdso/time32.h \
+ /home/martin/AMDSEV/linux/guest/include/vdso/time.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/uidgid.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/highuid.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/buildid.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kmod.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/umh.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/gfp.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/mmzone.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/list_nulls.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/wait.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/seqlock.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/mutex.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/debug_locks.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/pageblock-flags.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/page-flags-layout.h \
+ /home/martin/AMDSEV/linux/guest/include/generated/bounds.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/mm_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/auxvec.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/auxvec.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/uapi/asm/auxvec.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kref.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/refcount.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/rbtree.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/rcupdate.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/context_tracking_irq.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/rcutree.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/maple_tree.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/rwsem.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/completion.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/swait.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/uprobes.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/timer.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/ktime.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/jiffies.h \
+ /home/martin/AMDSEV/linux/guest/include/vdso/jiffies.h \
+ /home/martin/AMDSEV/linux/guest/include/generated/timeconst.h \
+ /home/martin/AMDSEV/linux/guest/include/vdso/ktime.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/timekeeping.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/clocksource_ids.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/debugobjects.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/uprobes.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/notifier.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/srcu.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/workqueue.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/workqueue_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/rcu_segcblist.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/srcutree.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/rcu_node_tree.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/percpu_counter.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/mmu.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/page-flags.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/local_lock.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/local_lock_internal.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/zswap.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/memory_hotplug.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/generated/asm/mmzone.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/mmzone.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/topology.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/arch_topology.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/topology.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/mpspec.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/mpspec_def.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/x86_init.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/apicdef.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/topology.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/cpu_smt.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sysctl.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/sysctl.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/elf.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/elf.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/ia32.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/compat.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sem.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/sem.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/ipc.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/rhashtable-types.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/ipc.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/generated/uapi/asm/ipcbuf.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/asm-generic/ipcbuf.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/uapi/asm/sembuf.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/socket.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/generated/uapi/asm/socket.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/asm-generic/socket.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/generated/uapi/asm/sockios.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/asm-generic/sockios.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/sockios.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/uio.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/ucopysize.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/uio.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/socket.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/if.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/libc-compat.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/hdlc/ioctl.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/fs.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/vfsdebug.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/wait_bit.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kdev_t.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/kdev_t.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/dcache.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/rculist.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/rculist_bl.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/list_bl.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/bit_spinlock.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/lockref.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/stringhash.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/hash.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/path.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/list_lru.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/shrinker.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/xarray.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kconfig.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sched/mm.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sync_core.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/sync_core.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sched/coredump.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/radix-tree.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/pid.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/capability.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/capability.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/semaphore.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/fcntl.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/fcntl.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/generated/uapi/asm/fcntl.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/asm-generic/fcntl.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/openat2.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/migrate_mode.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/percpu-rwsem.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/rcuwait.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sched/signal.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/signal.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sched/jobctl.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sched/task.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/uaccess.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/fault-inject-usercopy.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/nospec.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/uaccess.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/mmap_lock.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/smap.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/extable.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/tlbflush.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/mmu_notifier.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/interval_tree.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/invpcid.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/pti.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/pgtable.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/pkru.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/fpu/api.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/coco.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/pgtable_uffd.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/page_table_check.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/pgtable_64.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/fixmap.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/uapi/asm/vsyscall.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/fixmap.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/pgtable-invert.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/uaccess_64.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/runtime-const.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/access_ok.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/cred.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/key.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/assoc_array.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sched/user.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/ratelimit.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/posix-timers.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/alarmtimer.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/hrtimer.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/hrtimer_defs.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/timerqueue.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/rcuref.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/rcu_sync.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/delayed_call.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/uuid.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/errseq.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/ioprio.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sched/rt.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/iocontext.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/ioprio.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/fs_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/mount.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/mnt_idmapping.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/slab.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/percpu-refcount.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kasan.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kasan-enabled.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kasan-tags.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/rw_hint.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/file_ref.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/unicode.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/fs.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/quota.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/dqblk_xfs.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/dqblk_v1.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/dqblk_v2.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/dqblk_qtree.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/projid.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/quota.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/aio_abi.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/unistd.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/unistd.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/uapi/asm/unistd.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/generated/uapi/asm/unistd_64.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/generated/asm/unistd_64_x32.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/generated/asm/unistd_32_ia32.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/compat.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sched/task_stack.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/magic.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/user32.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/compat.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/syscall_wrapper.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/user.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/user_64.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/fsgsbase.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/vdso.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/elf.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/elf-em.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kobject.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sysfs.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kernfs.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/idr.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kobject_ns.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/moduleparam.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/rbtree_latch.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/error-injection.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/error-injection.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/module.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/module.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/orc_types.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/cdev.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/device.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/dev_printk.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/energy_model.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sched/cpufreq.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sched/topology.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sched/idle.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sched/sd_flags.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/ioport.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/klist.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/pm.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/device/bus.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/device/class.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/device/devres.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/device/driver.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/device.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/pm_wakeup.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/mm.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/pgalloc_tag.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/page_ext.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/stacktrace.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/page_ref.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/sizes.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/pgtable.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/memremap.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/cacheinfo.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/cpuhplock.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/huge_mm.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/vmstat.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/vm_event_item.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/pci.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/mod_devicetable.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/mei.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/mei_uuid.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/interrupt.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/irqreturn.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/hardirq.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/context_tracking_state.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/ftrace_irq.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/vtime.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/hardirq.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/irq.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/irq_vectors.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/sections.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/sections.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/io.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/io.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/generated/asm/early_ioremap.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/early_ioremap.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/shared/io.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/io.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/iomap.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/pci_iomap.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/logic_pio.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/fwnode.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/resource_ext.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/msi_api.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/pci.h \
+ /home/martin/AMDSEV/linux/guest/include/uapi/linux/pci_regs.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/pci_ids.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/dmapool.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/scatterlist.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/pci.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/memtype.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/dma-mapping.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/dma-direction.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/delay.h \
+ /home/martin/AMDSEV/linux/guest/arch/x86/include/asm/delay.h \
+ /home/martin/AMDSEV/linux/guest/include/asm-generic/delay.h \
+ /home/martin/AMDSEV/linux/guest/include/crypto/aead.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/crypto.h \
+ /home/martin/AMDSEV/linux/guest/include/crypto/hash.h \
+ /home/martin/AMDSEV/linux/guest/include/crypto/kpp.h \
+ /home/martin/AMDSEV/linux/guest/include/crypto/ecdh.h \
+ /home/martin/AMDSEV/linux/guest/include/crypto/algapi.h \
+ /home/martin/AMDSEV/linux/guest/include/crypto/utils.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/unaligned.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/unaligned/packed_struct.h \
+ /home/martin/AMDSEV/linux/guest/include/vdso/unaligned.h \
+ /home/martin/AMDSEV/linux/guest/include/linux/kthread.h \
+ sev_gpu_manager.h sev_gpu_transport.h sev_gpu_rpc.h sev_gpu_crypto.h \
+ sev_gpu_state.h sev_gpu_kmb.h sev_gpu_handshake.h sev_gpu_client_mmap.h \
+ sev_gpu_manager_mmap.h sev_gpu_comm.h sev_gpu_client_rm.h \
+ sev_gpu_nvidia.h sev_gpu_manager_exec.h sev_gpu_manager_sched.h \
+ sev_gpu_bringup.h sev_gpu_chardev.h sev_gpu_regions.h

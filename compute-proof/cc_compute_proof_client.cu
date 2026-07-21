@@ -34,17 +34,22 @@
 #define SEV_GPU_IOC_FLUSH_CHANNELS  _IO(SEV_GPU_IOC_MAGIC, 23)
 #define SEV_GPU_DEV             "/dev/sev_gpu_manager"
 
-/* Deterministic transform verified on the CPU (same as the manager proof). */
-__device__ __host__ static inline uint32_t expected_value(uint32_t i)
+/* Deterministic input and transform shared with the manager proof. */
+__host__ static inline uint32_t input_value(uint32_t i)
 {
     return (i * 2654435761u) ^ (i + 0x9e3779b9u);
 }
 
-__global__ void fill_kernel(uint32_t *out, uint32_t n)
+__device__ __host__ static inline uint32_t transform_value(uint32_t value, uint32_t i)
+{
+    return (value ^ 0xa5a5a5a5u) + (i * 2246822519u);
+}
+
+__global__ void transform_kernel(const uint32_t *in, uint32_t *out, uint32_t n)
 {
     uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n)
-        out[i] = expected_value(i);
+        out[i] = transform_value(in[i], i);
 }
 
 #define CUDA_CHECK(call)                                                       \
@@ -110,22 +115,34 @@ int main(int argc, char **argv)
            dev, prop.name, prop.major, prop.minor);
     printf("[*] Launching %u-element compute kernel via manager forwarding\n", n);
 
+    uint32_t *d_in = NULL;
     uint32_t *d_out = NULL;
+    CUDA_CHECK(cudaMalloc(&d_in, bytes));
     CUDA_CHECK(cudaMalloc(&d_out, bytes));
 
+    uint32_t *h_in = (uint32_t *)malloc(bytes);
     uint32_t *h_out = (uint32_t *)malloc(bytes);
-    if (!h_out) {
-        fprintf(stderr, "[-] host malloc(%zu) failed\n", bytes);
+    if (!h_in || !h_out) {
+        fprintf(stderr, "[-] host input/output malloc(%zu) failed\n", bytes);
+        free(h_in);
+        free(h_out);
+        cudaFree(d_in);
         cudaFree(d_out);
         close(sev_fd);
         return EXIT_FAILURE;
     }
 
-    printf("[*] CudaMalloc worked fine, ptr %p\n", (void *)d_out);
+    for (uint32_t i = 0; i < n; i++)
+        h_in[i] = input_value(i);
+
+    printf("[*] cudaMalloc worked: input=%p output=%p\n", (void *)d_in, (void *)d_out);
+    printf("[*] H2D: copying %zu bytes through the client CC path\n", bytes);
+    CUDA_CHECK(cudaMemcpy(d_in, h_in, bytes, cudaMemcpyHostToDevice));
+    printf("[+] H2D copy completed\n");
 
     const uint32_t threads = 256;
     const uint32_t blocks  = (n + threads - 1) / threads;
-    fill_kernel<<<blocks, threads>>>(d_out, n);
+    transform_kernel<<<blocks, threads>>>(d_in, d_out, n);
     CUDA_CHECK(cudaGetLastError());
 
     /*
@@ -135,7 +152,9 @@ int main(int argc, char **argv)
      * doorbell for all our assigned compute channels.
      */
     if (sev_flush(sev_fd) != 0) {
+        free(h_in);
         free(h_out);
+        cudaFree(d_in);
         cudaFree(d_out);
         close(sev_fd);
         return EXIT_FAILURE;
@@ -145,18 +164,22 @@ int main(int argc, char **argv)
     CUDA_CHECK(cudaDeviceSynchronize());
 
     /* Under CC, the D2H copy is transparently decrypted by the runtime. */
+    printf("[*] D2H: copying %zu bytes through the client CC path\n", bytes);
     CUDA_CHECK(cudaMemcpy(h_out, d_out, bytes, cudaMemcpyDeviceToHost));
+    printf("[+] D2H copy completed\n");
 
     uint32_t bad = 0, first_bad = 0;
     for (uint32_t i = 0; i < n; i++) {
-        if (h_out[i] != expected_value(i)) {
+        if (h_out[i] != transform_value(h_in[i], i)) {
             if (bad == 0)
                 first_bad = i;
             bad++;
         }
     }
 
+    free(h_in);
     free(h_out);
+    cudaFree(d_in);
     cudaFree(d_out);
     close(sev_fd);
 
@@ -167,7 +190,7 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    printf("[+] PASS: manager executed the kernel, all %u results match.\n", n);
-    printf("[+] Cross-VM compute-under-CC proven: client authored work, manager rang doorbell.\n");
+    printf("[+] PASS: H2D, manager GPU compute, and D2H produced %u correct results.\n", n);
+    printf("[+] Cross-VM bidirectional transfer and compute under CC proven.\n");
     return EXIT_SUCCESS;
 }

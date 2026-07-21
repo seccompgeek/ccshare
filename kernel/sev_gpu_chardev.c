@@ -11,6 +11,7 @@
 #include <linux/io.h>
 #include <linux/pgtable.h>
 #include <linux/uaccess.h>
+#include <linux/build_bug.h>
 #include "sev_gpu_manager.h"
 #include "sev_gpu_regions.h"
 #include "sev_gpu_state.h"
@@ -91,6 +92,17 @@ void sev_gpu_teardown_chardev(struct sev_gpu_dev *d)
 void data_init_header(struct sev_gpu_data_dev *dd)
 {
 	sev_gpu_data_header_t h;
+	void __iomem *hdr;
+
+	BUILD_BUG_ON(sizeof(sev_gpu_shmem_header_t) > SEV_GPU_DATA_HEADER_OFF);
+	BUILD_BUG_ON(SEV_GPU_DATA_HEADER_OFF + sizeof(sev_gpu_data_header_t) >
+		     SEV_GPU_DATA_HEADER_SIZE);
+
+	hdr = sev_gpu_data_header_ptr(dd);
+	if (!hdr) {
+		pr_err("sev_gpu: data header does not fit in BAR2\n");
+		return;
+	}
 
 	memset(&h, 0, sizeof(h));
 	h.magic        = SEV_GPU_DATA_MAGIC;
@@ -102,7 +114,10 @@ void data_init_header(struct sev_gpu_data_dev *dd)
 	h.payload_off  = SEV_GPU_DATA_HEADER_SIZE;
 	h.payload_size = (dd->mem_size > SEV_GPU_DATA_HEADER_SIZE) ?
 				dd->mem_size - SEV_GPU_DATA_HEADER_SIZE : 0;
-	memcpy_toio(dd->mem, &h, sizeof(h));
+	memcpy_toio(hdr, &h, sizeof(h));
+	wmb();
+	pr_info("sev_gpu: data protocol header@0x%lx owner=%u state=%u\n",
+		(unsigned long)sev_gpu_data_header_off(dd), h.owner_vm_id, h.state);
 }
 
 static int sev_gpu_data_open(struct inode *inode, struct file *filp)
@@ -138,16 +153,20 @@ static long sev_gpu_data_ioctl(struct file *filp, unsigned int cmd,
 {
 	struct sev_gpu_data_dev *dd = filp->private_data;
 	void __user *argp = (void __user *)arg;
+	void __iomem *hdr;
 	sev_gpu_data_header_t h;
 
 	if (!dd)
+		return -ENODEV;
+	hdr = sev_gpu_data_header_ptr(dd);
+	if (!hdr)
 		return -ENODEV;
 
 	switch (cmd) {
 	case SEV_GPU_IOC_DATA_INFO: {
 		sev_gpu_ioctl_data_info_t info;
 
-		memcpy_fromio(&h, dd->mem, sizeof(h));
+		memcpy_fromio(&h, hdr, sizeof(h));
 		memset(&info, 0, sizeof(info));
 		info.pool_index   = dd->pool_index;
 		info.is_manager   = dd->is_manager ? 1 : 0;
@@ -181,7 +200,7 @@ static long sev_gpu_data_ioctl(struct file *filp, unsigned int cmd,
 			memset_io(dd->mem + SEV_GPU_DATA_HEADER_SIZE, 0,
 				  dd->mem_size - SEV_GPU_DATA_HEADER_SIZE);
 
-		memcpy_fromio(&h, dd->mem, sizeof(h));
+		memcpy_fromio(&h, hdr, sizeof(h));
 		if (h.magic != SEV_GPU_DATA_MAGIC) {
 			memset(&h, 0, sizeof(h));
 			h.magic        = SEV_GPU_DATA_MAGIC;
@@ -197,7 +216,7 @@ static long sev_gpu_data_ioctl(struct file *filp, unsigned int cmd,
 				SEV_GPU_DATA_FREE : SEV_GPU_DATA_BOUND;
 		h.data_len = 0;
 		h.seq = 0;
-		memcpy_toio(dd->mem, &h, sizeof(h));
+		memcpy_toio(hdr, &h, sizeof(h));
 
 		pr_info("sev_gpu: data[%u] bound to owner %u\n",
 			dd->pool_index, bind.owner_vm_id);

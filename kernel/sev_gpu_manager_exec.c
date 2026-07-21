@@ -29,7 +29,7 @@ int sev_gpu_do_ce_copy(u32 vm_id, u32 channel_id, u32 flags,
 	sev_gpu_ce_submit_t submit;
 	u32 h_client = 0, st, generation = 0;
 	bool h2d;
-	u64 sys_off, vram_off, base, payload_sz;
+	u64 sys_off, vram_off, base, payload_sz, reserved_base;
 	u64 sys_phys, tag_phys, iv_phys, src_arg, dst_arg;
 	int i;
 
@@ -93,6 +93,19 @@ int sev_gpu_do_ce_copy(u32 vm_id, u32 channel_id, u32 flags,
 		return -EINVAL;
 	if (auth_tag_offset > payload_sz - SEV_GPU_BOUNCE_ALIGN ||
 	    iv_offset       > payload_sz - SEV_GPU_BOUNCE_ALIGN)
+		return -EINVAL;
+
+	/*
+	 * Payload offsets below are client-controlled. Keep CE bounce data out of
+	 * every fixed transport reserve, beginning with the CE pushbuffer band.
+	 */
+	reserved_base = ce_pushbuffer_reserve_base(dd->mem_size);
+	if (!reserved_base || reserved_base <= SEV_GPU_DATA_HEADER_SIZE)
+		return -ENOSPC;
+	reserved_base -= SEV_GPU_DATA_HEADER_SIZE;
+	if (sys_off >= reserved_base || length > reserved_base - sys_off ||
+	    auth_tag_offset > reserved_base - SEV_GPU_BOUNCE_ALIGN ||
+	    iv_offset > reserved_base - SEV_GPU_BOUNCE_ALIGN)
 		return -EINVAL;
 	/* The CE requires 16-byte-aligned auth-tag and IV addresses. */
 	if ((auth_tag_offset & (SEV_GPU_BOUNCE_ALIGN - 1)) ||

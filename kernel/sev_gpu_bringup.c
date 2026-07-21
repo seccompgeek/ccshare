@@ -360,7 +360,7 @@ bool sev_gpu_bringup_poll(void)
 
 static void sev_gpu_usermode_timer_write(void)
 {
-	struct sev_gpu_data_dev *dd = data_devs[0];
+	struct sev_gpu_data_dev *dd = sev_gpu_client_data_dev(ctrl_dev);
 	u8 __iomem *page;
 	u64 off, ns;
 

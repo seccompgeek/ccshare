@@ -48,7 +48,7 @@ extern uint hs_timeout_ms;
 extern atomic_t hs_client_busy[SEV_GPU_MAX_VMS];
 extern atomic_t hs_client_attempts[SEV_GPU_MAX_VMS];
 
-/* Transport mailbox accessor — DEFINED in sev_gpu_main.c (touches ctrl_dev). */
+/* Transport mailbox accessor — defined in sev_gpu_main.c. */
 void __iomem *hs_ctrl_mailbox(u8 vm);
 
 /* Handshake logic (moved to sev_gpu_handshake.c). */

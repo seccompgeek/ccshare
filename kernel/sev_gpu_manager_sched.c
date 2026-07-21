@@ -92,7 +92,9 @@ int sev_gpu_doorbell_service(struct sev_gpu_data_dev *dd)
 	if (dd->mem_size <= SEV_GPU_DATA_HEADER_SIZE)
 		return 0;
 
-	hdr = dd->mem;
+	hdr = sev_gpu_data_header_ptr(dd);
+	if (!hdr)
+		return 0;
 
 	seq = ioread32(hdr + offsetof(sev_gpu_data_header_t, db_seq));
 	if (seq == dd->last_db_seq)
@@ -313,13 +315,14 @@ void sev_gpu_sched_work(struct work_struct *w)
  * (wlc_lcic_reserve_base): WLC at [base, +SEV_GPU_WLC_SYSMEM_SIZE), LCIC at the
  * next SEV_GPU_LCIC_SYSMEM_SIZE bytes. We pass the manager-view GPAs (mem_phys +
  * offset) that nvidia-uvm imports as OS_PHYS_ADDR descriptors; the client derives
- * the same offsets from the shared reserve geometry. The CE pool needs no GPA.
+ * the same offsets from the shared reserve geometry. The CE pool imports its
+ * 16 MiB unprotected pushbuffer from the adjacent CE reserve for the same reason.
  */
 void sev_gpu_manager_setup_client_channels(u32 vm_id)
 {
 	uvm_sev_manager_create_client_pool_t create_fn;
 	struct sev_gpu_data_dev *dd;
-	u64 band, wlc_gpa, wlc_size, lcic_gpa, lcic_size;
+	u64 ce_band, ce_gpa, ce_size, band, wlc_gpa, wlc_size, lcic_gpa, lcic_size;
 	u32 st;
 
 	if (!manager || vm_id >= SEV_GPU_MAX_VMS)
@@ -333,12 +336,15 @@ void sev_gpu_manager_setup_client_channels(u32 vm_id)
 	dd = data_devs[vm_id];
 	if (!dd || !dd->mem_phys)
 		return;
+	ce_band = ce_pushbuffer_reserve_base(dd->mem_size);
 	band = wlc_lcic_reserve_base(dd->mem_size);
-	if (!band) {
-		pr_warn("sev_gpu: VM %u data region too small for WLC/LCIC reserve; per-client pools disabled\n",
+	if (!ce_band || !band) {
+		pr_warn("sev_gpu: VM %u data region too small for CE/WLC/LCIC reserves; per-client pools disabled\n",
 			vm_id);
 		return;
 	}
+	ce_gpa    = (u64)dd->mem_phys + ce_band;
+	ce_size   = SEV_GPU_CE_PUSHBUFFER_SIZE;
 	wlc_gpa   = (u64)dd->mem_phys + band;
 	wlc_size  = SEV_GPU_WLC_SYSMEM_SIZE;
 	lcic_gpa  = wlc_gpa + SEV_GPU_WLC_SYSMEM_SIZE;
@@ -353,7 +359,8 @@ void sev_gpu_manager_setup_client_channels(u32 vm_id)
 		clear_bit(vm_id, &client_channels_setup);
 		return;
 	}
-	st = create_fn(manager_gpu_uuid, vm_id, wlc_gpa, wlc_size, lcic_gpa, lcic_size);
+	st = create_fn(manager_gpu_uuid, vm_id, ce_gpa, ce_size,
+		       wlc_gpa, wlc_size, lcic_gpa, lcic_size);
 	symbol_put(uvm_sev_manager_create_client_pool);
 
 	if (st != 0 /* NV_OK */) {
@@ -815,9 +822,12 @@ release_slot:
  */
 void sev_gpu_copy_service(struct sev_gpu_data_dev *dd, u32 vm_id)
 {
-	void __iomem *hdr = dd->mem;
+	void __iomem *hdr = sev_gpu_data_header_ptr(dd);
 	sev_gpu_data_header_t h;
 	int rc;
+
+	if (!hdr)
+		return;
 
 	memcpy_fromio(&h, hdr, sizeof(h));
 	if (h.magic != SEV_GPU_DATA_MAGIC || h.state != SEV_GPU_DATA_STAGED) {
@@ -936,7 +946,7 @@ void sev_gpu_copy_service(struct sev_gpu_data_dev *dd, u32 vm_id)
 		ivshmem_ring(ctrl_dev, (u16)vm_id, IVSHMEM_VECTOR_RPC);
 }
 
-/* Manager: service one VM's control-BAR mailbox that holds a pending request. */
+/* Manager: service one VM's transport-selected mailbox. */
 void rpc_service_slot(u8 vm, sev_gpu_rpc_slot_t *slot)
 {
 	void __iomem *mb = rpc_ctrl_mailbox(vm);
@@ -1335,7 +1345,7 @@ void rpc_service_slot(u8 vm, sev_gpu_rpc_slot_t *slot)
 }
 
 /*
- * Manager replay poller. Scans every VM's control-BAR mailbox slot for pending
+ * Manager replay poller. Scans every VM's transport-selected mailbox for pending
  * requests, services them, and otherwise sleeps until the RPC doorbell kicks it
  * or a short idle-poll timeout elapses (closes the kick-after-scan race, and
  * makes progress even if the doorbell lands on the wrong peer id).

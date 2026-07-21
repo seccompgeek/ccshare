@@ -33,7 +33,8 @@
  *
  * MAILBOXES:
  *   Per-client region (sev_gpu_rpc.h already lays this out):
- *     [0)                       sev_gpu_data_header_t
+ *     [0)                        sev_gpu_shmem_header_t
+ *     [SEV_GPU_DATA_HEADER_OFF)  sev_gpu_data_header_t
  *     [SEV_GPU_RPC_MAILBOX_OFF)  RM-RPC mailbox   <- rpc_ctrl_mailbox(vm)
  *     [SEV_GPU_RPC_STAGING_OFF)  nested-param staging
  *   req_slot()/grant_slot() index the request/grant regions of that client's
@@ -114,8 +115,9 @@ u16 sev_gpu_manager_peer(struct sev_gpu_dev *d)
  *     the manager. peer/vector are ignored.
  *   - MANAGER device: signal client `peer` by writing SEV_CH_REG_COMPLETE on
  *     THAT client's instance (chan_devs[peer]). The written value is inert; the
- *     instance identity selects the target completion irqfd. vector is ignored
- *     (the client demuxes via irq_status). If chan_devs[peer] is absent, drop.
+ *     instance identity selects the target completion irqfd. vector is ignored;
+ *     the client consumes the shared completion state because irq_status is
+ *     private to each QEMU process. If chan_devs[peer] is absent, use d.
  */
 void ivshmem_ring(struct sev_gpu_dev *d, u16 peer, u16 vector)
 {
@@ -212,56 +214,62 @@ irqreturn_t sev_gpu_channel_irq(int irq, void *data)
 {
 	struct sev_gpu_dev *d = data;
 	u32 status;
+	int event_count;
 
 	if (!d || !d->regs)
 		return IRQ_NONE;
 
 	status = readl(d->regs + SEV_CH_REG_IRQ_STATUS);
+	/*
+	 * The client completion MSI is injected by an irqfd owned by the client
+	 * QEMU but written by the separate manager QEMU process. That injection
+	 * cannot update the client QEMU process's private irq_status field. Since a
+	 * client sev-channel has exactly one MSI and every incoming interrupt is a
+	 * manager completion, consume it unconditionally and inspect shared state.
+	 */
+	if (!d->is_manager) {
+		if (status)
+			writel(status, d->regs + SEV_CH_REG_IRQ_STATUS);
+		event_count = sev_gpu_event_drain(d);
+		pr_info_ratelimited(
+			"sev_gpu: COMPLETION IRQ vm=%u raw_status=0x%08x events=%d\n",
+			d->client_vm_id, status, event_count);
+		wake_up_interruptible(&d->grant_wq);
+		return IRQ_HANDLED;
+	}
+
 	if (!status)
 		return IRQ_NONE;
 
 	/* Write-1-to-clear the bits we are about to service. */
 	writel(status, d->regs + SEV_CH_REG_IRQ_STATUS);
 
-	if (d->is_manager) {
-		/* A client rang (RPC doorbell or compute doorbell). */
-		if (status & (SEV_CH_IRQ_DOORBELL | SEV_CH_IRQ_COMPUTE_DB)) {
-			/*
-			 * Doorbell interrupt received. Log the raw status so we can
-			 * see which bits the manager device actually raised. NOTE:
-			 * the manager side currently raises DOORBELL for every wake
-			 * (BAR0 RPC ring AND BAR2 compute ring share one db_notifier
-			 * fd), so COMPUTE_DB may not be independently set here even
-			 * for a compute ring -- the raw bits tell the truth. We also
-			 * sample the compute doorbell token slot so the interrupt can
-			 * be correlated with what CUDA wrote to +0x90/+0x94.
-			 */
-			pr_info_ratelimited(
-				"sev_gpu: DOORBELL IRQ vm=%u status=0x%08x (DOORBELL=%d COMPUTE_DB=%d)\n",
-				d->client_vm_id, status,
-				!!(status & SEV_CH_IRQ_DOORBELL),
-				!!(status & SEV_CH_IRQ_COMPUTE_DB));
-
-			if (atomic_cmpxchg(&d->mgr_polling, 0, 1) == 0)
-				mgr_irq_mask(d);
-			if (d->sched_wq)
-				queue_work(d->sched_wq, &d->sched_work);
-			/* RPC replay path (mailbox scan) also needs a kick. */
-			rpc_wake_manager();
-			if (d->rpc_wq)
-				queue_work(d->rpc_wq, &d->rpc_work);
-		}
-	} else {
+	/* A client rang (RPC doorbell or compute doorbell). */
+	if (status & (SEV_CH_IRQ_DOORBELL | SEV_CH_IRQ_COMPUTE_DB)) {
 		/*
-		 * The channel has one shared completion MSI for RM-RPC replies,
-		 * grants, and relayed NVIDIA OS events. It cannot use the legacy
-		 * grant-vector poll optimization: masking after an RPC reply would
-		 * prevent a later asynchronous OS event from ever being drained.
+		 * Doorbell interrupt received. Log the raw status so we can
+		 * see which bits the manager device actually raised. NOTE:
+		 * the manager side currently raises DOORBELL for every wake
+		 * (BAR0 RPC ring AND BAR2 compute ring share one db_notifier
+		 * fd), so COMPUTE_DB may not be independently set here even
+		 * for a compute ring -- the raw bits tell the truth. We also
+		 * sample the compute doorbell token slot so the interrupt can
+		 * be correlated with what CUDA wrote to +0x90/+0x94.
 		 */
-		if (status & SEV_CH_IRQ_COMPLETION) {
-			sev_gpu_event_drain(d);
-			wake_up_interruptible(&d->grant_wq);
-		}
+		pr_info_ratelimited(
+			"sev_gpu: DOORBELL IRQ vm=%u status=0x%08x (DOORBELL=%d COMPUTE_DB=%d)\n",
+			d->client_vm_id, status,
+			!!(status & SEV_CH_IRQ_DOORBELL),
+			!!(status & SEV_CH_IRQ_COMPUTE_DB));
+
+		if (atomic_cmpxchg(&d->mgr_polling, 0, 1) == 0)
+			mgr_irq_mask(d);
+		if (d->sched_wq)
+			queue_work(d->sched_wq, &d->sched_work);
+		/* RPC replay path (mailbox scan) also needs a kick. */
+		rpc_wake_manager();
+		if (d->rpc_wq)
+			queue_work(d->rpc_wq, &d->rpc_work);
 	}
 	return IRQ_HANDLED;
 }

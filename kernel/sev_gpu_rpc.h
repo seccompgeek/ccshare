@@ -21,7 +21,8 @@
  *   Each client already owns a hardware-isolated ivshmem-plain data region
  *   (see sev_gpu_data_header_t in sev_gpu_manager.h). We reuse that region:
  *
- *     [ 0                         ) sev_gpu_data_header_t        (4 KiB)
+ *     [ 0                         ) sev_gpu_shmem_header_t
+ *     [ SEV_GPU_DATA_HEADER_OFF   ) sev_gpu_data_header_t
  *     [ SEV_GPU_RPC_MAILBOX_OFF   ) sev_gpu_rpc_slot_t           (mailbox)
  *     [ SEV_GPU_RPC_STAGING_OFF   ) nested param-buffer staging  (bulk)
  *
@@ -49,11 +50,12 @@
 
 /*
  * Mailbox + staging placement inside the per-client data region.
- * The mailbox sits one page after the data header; bulk nested-buffer staging
- * begins after the mailbox. Everything before SEV_GPU_RPC_STAGING_OFF is
- * control metadata; the staging area is the only place large blobs live.
+ * The mailbox starts after the shared metadata page; bulk nested-buffer
+ * staging begins after the mailbox. Everything before
+ * SEV_GPU_RPC_STAGING_OFF is control metadata; the staging area is the only
+ * place large blobs live.
  */
-#define SEV_GPU_RPC_MAILBOX_OFF   (4096UL)                 /* after data header   */
+#define SEV_GPU_RPC_MAILBOX_OFF   (4096UL)                 /* after metadata page */
 #define SEV_GPU_RPC_MAILBOX_SIZE  (60UL * 1024UL)          /* one mailbox slot    */
 #define SEV_GPU_RPC_STAGING_OFF   (SEV_GPU_RPC_MAILBOX_OFF + SEV_GPU_RPC_MAILBOX_SIZE)
 
@@ -226,6 +228,24 @@ typedef struct {
 #define SEV_GPU_RPC_CMD_UVM_MAP_DMA  0x8001U
 
 /*
+ * Synthetic RPC command for UVM_MAP_DYNAMIC_PARALLELISM_REGION. The client
+ * owns only the VA-range metadata; the manager installs/removes the special
+ * SKED-reflected PTE in the client's real FERMI_VASPACE_A.
+ */
+#define SEV_GPU_RPC_CMD_UVM_SKED     0x8004U
+#define SEV_GPU_RPC_UVM_SKED_MAP     1U
+#define SEV_GPU_RPC_UVM_SKED_UNMAP   2U
+
+/*
+ * Synthetic RPC for client UVM managed ranges. The manager allocates protected
+ * vidmem and maps it at the exact client-selected VA in the client's real RM
+ * VA space before any client channel can submit work against the range.
+ */
+#define SEV_GPU_RPC_CMD_UVM_MANAGED       0x8005U
+#define SEV_GPU_RPC_UVM_MANAGED_MAP       1U
+#define SEV_GPU_RPC_UVM_MANAGED_UNMAP     2U
+
+/*
  * Payload for SEV_GPU_RPC_CMD_UVM_MAP_DMA. Travels in the inline_arg field of
  * the mailbox slot (no nested buffers). The manager fills rm_status on reply.
  */
@@ -238,6 +258,24 @@ typedef struct {
     uint32_t rm_status; /* [OUT] NV_STATUS from manager NV_ESC_RM_MAP_MEMORY_DMA    */
     uint32_t hVASpace;  /* [IN]  FERMI_VASPACE_A handle on manager (hDma for NVOS46)*/
 } __attribute__((packed)) sev_gpu_rpc_uvm_map_dma_t;
+
+typedef struct {
+    uint64_t gpu_va;     /* [IN]  base of the one-page SKED-reflected range */
+    uint64_t length;     /* [IN]  GPU page size / mapping length            */
+    uint32_t hClient;    /* [IN]  RM namespace which owns hVASpace          */
+    uint32_t hVASpace;   /* [IN]  target FERMI_VASPACE_A                    */
+    uint32_t op;         /* [IN]  SEV_GPU_RPC_UVM_SKED_{MAP,UNMAP}          */
+    uint32_t rm_status;  /* [OUT] manager NV_STATUS                         */
+} __attribute__((packed)) sev_gpu_rpc_uvm_sked_t;
+
+typedef struct {
+    uint64_t gpu_va;     /* [IN]  managed range base                         */
+    uint64_t length;     /* [IN]  managed range length                       */
+    uint32_t hClient;    /* [IN]  RM namespace which owns hVASpace           */
+    uint32_t hVASpace;   /* [IN]  target FERMI_VASPACE_A                     */
+    uint32_t op;         /* [IN]  SEV_GPU_RPC_UVM_MANAGED_{MAP,UNMAP}        */
+    uint32_t rm_status;  /* [OUT] manager NV_STATUS                          */
+} __attribute__((packed)) sev_gpu_rpc_uvm_managed_t;
 
 typedef int __sev_gpu_rpc_h_pad;
 

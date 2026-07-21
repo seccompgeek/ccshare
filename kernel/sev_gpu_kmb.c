@@ -2,7 +2,7 @@
 /*
  * sev_gpu_kmb.c — KMB seal/install/send/recv (moved from sev_gpu_manager.c).
  * Depends on: crypto (aead, kmb_fp), state (comm_keystore), and the transport
- * mailbox accessor kmb_mailbox() (defined in sev_gpu_main.c, touches ctrl_dev).
+ * mailbox accessor kmb_mailbox() (defined in sev_gpu_main.c).
  */
 #include <linux/module.h>
 #include <linux/slab.h>

@@ -243,9 +243,8 @@ static void hs_test_kick_fn(struct work_struct *w)
 /* struct sev_gpu_dev -> sev_gpu_state.h */
 
 /*
- * A PRIVATE per-VM DATA ivshmem device (ivshmem-plain: BAR2 only, no MSI-X).
- * The manager binds one per client; a client binds exactly its own. The
- * region's first page holds a sev_gpu_data_header_t; the payload follows.
+ * Per-client DATA view. The first page holds protocol metadata, including
+ * sev_gpu_data_header_t at SEV_GPU_DATA_HEADER_OFF; the payload follows.
  */
 /* struct sev_gpu_data_dev -> sev_gpu_state.h */
 
@@ -478,8 +477,8 @@ int sev_gpu_event_drain(struct sev_gpu_dev *d)
 	if (!d || d->is_manager)
 		return 0;
 	/* Legacy ivshmem IRQs arrive on ctrl_dev while the completion ring lives
-	 * in data_devs[0]. Under the unified channel these pointers are identical. */
-	ring_dev = READ_ONCE(data_devs[0]);
+	 * in the client's data device. Under sev-channel d is that same device. */
+	ring_dev = sev_gpu_client_data_dev(d);
 	if (!ring_dev)
 		ring_dev = d;
 	ring = event_ring_for_dev(ring_dev);
@@ -578,39 +577,47 @@ typedef u32 (*sev_gpu_kmb_fetch_t)(u32 h_client, u32 h_channel,
 #include "sev_gpu_regions.h"
 
 /*
- * Client: hand nvidia-uvm.ko this VM's OWN view of its WLC/LCIC reserve band and
- * shadow doorbell, so nvidia-uvm can build its proxy WLC/LCIC pools mapped onto the
- * shared ivshmem band -- the exact bytes the manager's paired GPU channels DMA. Both
+ * Client: hand nvidia-uvm.ko this VM's OWN view of its CE pushbuffer and WLC/LCIC
+ * reserve bands plus the shadow doorbell, so nvidia-uvm can map the exact bytes
+ * the manager's per-client GPU channels DMA. Both
  * peers derive the same region-relative offsets from the shared reserve geometry
- * (wlc_lcic_reserve_base / compute_doorbell_off); the client supplies its data-region
- * base (data_devs[0]->mem_phys). Bound by nvidia-uvm via symbol_get at client GPU
+ * (ce_pushbuffer_reserve_base / wlc_lcic_reserve_base / compute_doorbell_off);
+	 * the client supplies the local client data device's mem_phys. Bound by
+	 * nvidia-uvm via symbol_get at client GPU
  * bring-up (no hard module dep). Returns 0 on success, negative errno otherwise.
  *
  * Client-role only: the manager builds REAL per-client pools over each client's
  * manager-view GPA (sev_gpu_manager_setup_client_channels), never a proxy over its
  * own region, so reject the manager role outright.
  */
-int sev_gpu_client_reserve_band(u64 *wlc_gpa, u64 *wlc_size,
+int sev_gpu_client_reserve_band(u64 *ce_pushbuffer_gpa, u64 *ce_pushbuffer_size,
+				u64 *wlc_gpa, u64 *wlc_size,
 				u64 *lcic_gpa, u64 *lcic_size, u64 *doorbell_gpa);
-int sev_gpu_client_reserve_band(u64 *wlc_gpa, u64 *wlc_size,
+int sev_gpu_client_reserve_band(u64 *ce_pushbuffer_gpa, u64 *ce_pushbuffer_size,
+				u64 *wlc_gpa, u64 *wlc_size,
 				u64 *lcic_gpa, u64 *lcic_size, u64 *doorbell_gpa)
 {
 	struct sev_gpu_data_dev *dd;
-	u64 band, db;
+	u64 ce_band, band, db;
 
 	if (manager)			/* manager role builds real pools, not proxies */
 		return -EPERM;
-	if (num_data_devs < 1 || !data_devs[0])
+	dd = sev_gpu_client_data_dev(ctrl_dev);
+	if (!dd)
 		return -ENODEV;
-	dd = data_devs[0];		/* the client has exactly one data region */
 	if (!dd->mem_phys || dd->is_manager)
 		return -ENODEV;
 
+	ce_band = ce_pushbuffer_reserve_base(dd->mem_size);
 	band = wlc_lcic_reserve_base(dd->mem_size);
 	db = compute_doorbell_off(dd->mem_size);
-	if (!band || !db)
+	if (!ce_band || !band || !db)
 		return -ENOSPC;		/* region too small for the reserves */
 
+	if (ce_pushbuffer_gpa)
+		*ce_pushbuffer_gpa = (u64)dd->mem_phys + ce_band;
+	if (ce_pushbuffer_size)
+		*ce_pushbuffer_size = SEV_GPU_CE_PUSHBUFFER_SIZE;
 	if (wlc_gpa)
 		*wlc_gpa = (u64)dd->mem_phys + band;
 	if (wlc_size)
@@ -622,7 +629,8 @@ int sev_gpu_client_reserve_band(u64 *wlc_gpa, u64 *wlc_size,
 	if (doorbell_gpa)
 		*doorbell_gpa = (u64)dd->mem_phys + db;
 
-	pr_info("sev_gpu: client reserve band wlc_gpa=0x%llx lcic_gpa=0x%llx doorbell_gpa=0x%llx\n",
+	pr_info("sev_gpu: client reserve band ce_pushbuffer_gpa=0x%llx size=0x%lx wlc_gpa=0x%llx lcic_gpa=0x%llx doorbell_gpa=0x%llx\n",
+		(u64)dd->mem_phys + ce_band, SEV_GPU_CE_PUSHBUFFER_SIZE,
 		(u64)dd->mem_phys + band,
 		(u64)dd->mem_phys + band + SEV_GPU_WLC_SYSMEM_SIZE,
 		(u64)dd->mem_phys + db);
@@ -848,6 +856,8 @@ int rpc_nested_layout(u32 cmd, const void *arg, u32 arg_size,
 					psz = 24;  /* sizeof(NV0005_ALLOC_PARAMETERS); NV01_EVENT_OS_EVENT */
 				else if (hClass == 0x9067u)
 					psz = 12;  /* sizeof(NV_CTXSHARE_ALLOCATION_PARAMETERS); FERMI_CONTEXT_SHARE_A */
+				else if (hClass == 0x83deu)
+					psz = 12;  /* sizeof(NV83DE_ALLOC_PARAMETERS); GT200_DEBUGGER */
 				else if ((hClass & 0xffu) == 0x6fu &&
 					 (hClass >> 8) >= 0xc3u && (hClass >> 8) <= 0xc9u)
 					psz = 368; /* sizeof(NV_CHANNEL_ALLOC_PARAMS); GPFIFO channel */
@@ -1041,6 +1051,8 @@ static bool grant_ready(struct sev_gpu_dev *d, u8 vm)
  * as a raw 16-byte pointer, ABI-compatible with the callee's NvProcessorUuid*.
  */
 extern u32 uvm_sev_manager_create_client_pool(const void *gpu_uuid, u32 client_id,
+					      u64 ce_pushbuffer_gpa,
+					      u64 ce_pushbuffer_size,
 					      u64 wlc_gpa, u64 wlc_size,
 					      u64 lcic_gpa, u64 lcic_size);
 
@@ -1245,7 +1257,7 @@ static irqreturn_t sev_gpu_irq_handler(int irq, void *data)
  */
 static long sev_gpu_request_copy(struct sev_gpu_dev *d, void __user *argp)
 {
-	struct sev_gpu_data_dev *dd = data_devs[0];	/* client: single region */
+	struct sev_gpu_data_dev *dd = sev_gpu_client_data_dev(d);
 	void __iomem *hdr;
 	sev_gpu_ioctl_submit_t su;
 	unsigned long deadline;
@@ -1265,7 +1277,9 @@ static long sev_gpu_request_copy(struct sev_gpu_dev *d, void __user *argp)
 	if (su.length == 0)
 		return -EINVAL;
 
-	hdr = dd->mem;
+	hdr = sev_gpu_data_header_ptr(dd);
+	if (!hdr)
+		return -ENODEV;
 
 	/* The manager initializes the header; bail if it has not yet. */
 	memcpy_fromio(&magic, hdr + offsetof(sev_gpu_data_header_t, magic),
@@ -1338,7 +1352,7 @@ static long sev_gpu_request_copy(struct sev_gpu_dev *d, void __user *argp)
  */
 static long sev_gpu_request_submit_work(struct sev_gpu_dev *d, void __user *argp)
 {
-	struct sev_gpu_data_dev *dd = data_devs[0];	/* client: single region */
+	struct sev_gpu_data_dev *dd = sev_gpu_client_data_dev(d);
 	void __iomem *hdr;
 	sev_gpu_ioctl_submit_work_t sw;
 	unsigned long deadline;
@@ -1358,7 +1372,9 @@ static long sev_gpu_request_submit_work(struct sev_gpu_dev *d, void __user *argp
 	if (!sw.h_client || !sw.h_channel)
 		return -EINVAL;
 
-	hdr = dd->mem;
+	hdr = sev_gpu_data_header_ptr(dd);
+	if (!hdr)
+		return -ENODEV;
 
 	/* The manager initializes the header; bail if it has not yet. */
 	memcpy_fromio(&magic, hdr + offsetof(sev_gpu_data_header_t, magic),
@@ -1422,7 +1438,7 @@ static long sev_gpu_request_submit_work(struct sev_gpu_dev *d, void __user *argp
  */
 static long sev_gpu_flush_channels(struct sev_gpu_dev *d)
 {
-	struct sev_gpu_data_dev *dd = data_devs[0];	/* client: single region */
+	struct sev_gpu_data_dev *dd = sev_gpu_client_data_dev(d);
 	void __iomem *hdr;
 	unsigned long deadline;
 	u32 state;
@@ -1432,16 +1448,26 @@ static long sev_gpu_flush_channels(struct sev_gpu_dev *d)
 
 	if (d->is_manager)
 		return -EPERM;
-	if (!dd || !dd->mem || !dd->mem_phys)
+	if (!dd || !dd->mem || !dd->mem_phys) {
+		pr_err("sev_gpu: flush: client data region is not bound\n");
 		return -ENODEV;
+	}
 	if (dd->mem_size <= SEV_GPU_DATA_HEADER_SIZE)
 		return -ENOSPC;
 
-	hdr = dd->mem;
+	hdr = sev_gpu_data_header_ptr(dd);
+	if (!hdr) {
+		pr_err("sev_gpu: flush: data header does not fit in BAR2\n");
+		return -ENODEV;
+	}
 	memcpy_fromio(&magic, hdr + offsetof(sev_gpu_data_header_t, magic),
 		      sizeof(magic));
-	if (magic != SEV_GPU_DATA_MAGIC)
+	if (magic != SEV_GPU_DATA_MAGIC) {
+		pr_err("sev_gpu: flush: bad data header magic=0x%llx at off=0x%lx\n",
+		       (unsigned long long)magic,
+		       (unsigned long)sev_gpu_data_header_off(dd));
 		return -ENODEV;
+	}
 
 	mutex_lock(&d->copy_lock);
 
@@ -1486,20 +1512,22 @@ static long sev_gpu_flush_channels(struct sev_gpu_dev *d)
 /* ------------------------------------------------------------------ */
 
 /*
- * The sealed-KMB mailbox lives in the SHARED CONTROL BAR, one fixed-stride slot
- * per client VM, in the free gap between the TLS tunnel and the RM-RPC region.
- * Returns NULL if the control device isn't bound or its BAR is too small.
+ * The sealed-KMB mailbox uses one fixed-stride slot per client VM. Legacy
+ * ivshmem stores all slots in the shared control BAR; sev-channel stores the
+ * slot in that client's own BAR2. Returns NULL if its BAR is unavailable.
  */
 void __iomem *kmb_mailbox(u8 vm)
 {
+	struct sev_gpu_dev *d;
 	size_t off;
 
-	if (!ctrl_dev || !ctrl_dev->shmem || vm >= SEV_GPU_MAX_VMS)
+	d = sev_gpu_mailbox_dev(vm);
+	if (!d || !d->shmem)
 		return NULL;
 	off = SEV_GPU_KMB_REGION_OFF + (size_t)vm * SEV_GPU_KMB_SLOT_STRIDE;
-	if (off + sizeof(struct sev_gpu_kmb_mbox) > ctrl_dev->shmem_size)
+	if (off + sizeof(struct sev_gpu_kmb_mbox) > d->shmem_size)
 		return NULL;
-	return ctrl_dev->shmem + off;
+	return d->shmem + off;
 }
 
 /*
@@ -1600,17 +1628,19 @@ out:
 	return ret;
 }
 
-/* Handshake mailbox for VM @vm: start of its slot in the TLS ring region. */
+/* Handshake mailbox for VM @vm in the transport-selected per-VM BAR. */
 void __iomem *hs_ctrl_mailbox(u8 vm)
 {
+	struct sev_gpu_dev *d;
 	size_t off;
 
-	if (!ctrl_dev || !ctrl_dev->shmem || vm >= SEV_GPU_MAX_VMS)
+	d = sev_gpu_mailbox_dev(vm);
+	if (!d || !d->shmem)
 		return NULL;
 	off = SEV_GPU_TLS_REGION_OFF + (size_t)vm * SEV_GPU_TLS_SLOT_STRIDE;
-	if (off + sizeof(sev_gpu_hs_slot_t) > ctrl_dev->shmem_size)
+	if (off + sizeof(sev_gpu_hs_slot_t) > d->shmem_size)
 		return NULL;
-	return ctrl_dev->shmem + off;
+	return d->shmem + off;
 }
 
 /* Load (and cache) the 32-byte shared PSK from psk_path. */
@@ -2075,7 +2105,7 @@ long sev_gpu_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 	case SEV_GPU_IOC_GET_COMPUTE_INFO: {
 		sev_gpu_ioctl_compute_info_t ci;
-		struct sev_gpu_data_dev *dd = data_devs[0];  /* client: single region */
+		struct sev_gpu_data_dev *dd = sev_gpu_client_data_dev(d);
 		u64 userd_gpa = 0, gpfifo_gpa = 0, pushbuf_gpa = 0, enc_gpa = 0;
 		u64 userd_off = 0, gpfifo_off = 0, pushbuf_off = 0, enc_off = 0;
 		int ret;
@@ -2833,7 +2863,7 @@ static void rpc_manager_stop(void)
  * nvidia_mmap_helper() has no local mmap context (NV_ESC_RM_MAP_MEMORY was
  * forwarded to the manager).  nv-mmap.c calls this callback with the GPA CUDA
  * is trying to map.  We check whether the GPA falls within the compute reserve
- * of data_devs[0] (the only data device on a client).  If it does, we return
+	 * of the local client data device. If it does, we return
  * its PFN so nv-mmap.c can remap_pfn_range() it -- the page is already shared
  * ivshmem RAM visible to both VMs.
  */
@@ -3483,6 +3513,8 @@ static int sev_gpu_probe_channel(struct pci_dev *pdev)
 	 * resolve.
 	 */
 	d->pool_index = d->client_vm_id;
+	if (d->is_manager)
+		data_init_header(d);
 	data_devs[d->pool_index] = d;
 	if (d->pool_index + 1 > num_data_devs)
 		num_data_devs = d->pool_index + 1;
@@ -3511,6 +3543,8 @@ static int sev_gpu_probe_channel(struct pci_dev *pdev)
 		}
 		sev_gpu_publish_gpu_desc(d);
 	} else {
+		/* QEMU overlays this complete 64 KiB window with emulated MMIO. */
+		sev_gpu_client_register_user_mmio(d);
 		rpc_client_bind_nvidia();
 		sev_gpu_client_attach_gpu(d);
 		/*
@@ -3608,6 +3642,8 @@ static void sev_gpu_remove_channel(struct pci_dev *pdev)
 
 	if (!d)
 		return;
+
+	sev_gpu_client_unregister_user_mmio(d);
 
 	/* Cancel any pending test handshake kick before freeing the device. */
 	if (hs_test_kick)

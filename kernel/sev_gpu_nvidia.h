@@ -31,14 +31,18 @@ extern sev_gpu_compute_free_t           compute_free_fn;
 
 typedef u32 (*sev_gpu_rm_replay_t)(u32 client_id, u32 cmd, void *arg, u32 size);
 typedef u32 (*uvm_sev_manager_create_client_pool_t)(const void *gpu_uuid, u32 client_id,
-						    u64 wlc_gpa, u64 wlc_size,
-						    u64 lcic_gpa, u64 lcic_size);
+							    u64 ce_pushbuffer_gpa,
+							    u64 ce_pushbuffer_size,
+							    u64 wlc_gpa, u64 wlc_size,
+							    u64 lcic_gpa, u64 lcic_size);
 typedef void (*uvm_sev_manager_release_gpu_t)(void);
 extern sev_gpu_rm_replay_t rpc_replay_fn;
 extern sev_gpu_kmb_fetch_t kmb_fetch_fn;
 
 /* nvidia-uvm symbols resolved via symbol_get (weak externs). */
 extern u32 uvm_sev_manager_create_client_pool(const void *gpu_uuid, u32 client_id,
+					      u64 ce_pushbuffer_gpa,
+					      u64 ce_pushbuffer_size,
 					      u64 wlc_gpa, u64 wlc_size,
 					      u64 lcic_gpa, u64 lcic_size);
 extern void uvm_sev_manager_release_gpu(void);

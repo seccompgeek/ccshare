@@ -97,9 +97,9 @@ static inline u64 compute_doorbell_off(size_t mem_size)
  * on Blackwell (sm_120) issues ~29 CC-secure channels plus several 2 MiB
  * shared-sysmem (esc-0x3e) buffers and a trailing ~8 MiB one, which peaks just
  * over 16 MiB and exhausted the old 16 MiB reserve (-ENOSPC -> NV_ERR_INSUFFICIENT
- * _RESOURCES on cudaMalloc). Size it at 32 MiB: ~2x the observed peak, while
- * still leaving the region's low ~29 MiB free for client-chosen CE bounce
- * offsets. NB: the client derives the same reserve geometry from this constant
+ * _RESOURCES on cudaMalloc). Size it at 32 MiB: ~2x the observed peak. The CE
+ * pushbuffer reserve below this band further limits the low client-chosen CE
+ * bounce range. NB: the client derives the same reserve geometry from this constant
  * (to keep bounce buffers clear of the pool), so both peers MUST build the same
  * value -- rebuild sev_gpu_manager.ko on the client and the manager together.
  */
@@ -159,6 +159,28 @@ static inline u64 wlc_lcic_reserve_base(size_t mem_size)
 	if (!obase || obase <= SEV_GPU_WLC_LCIC_RESERVE_SIZE)
 		return 0;
 	return ALIGN_DOWN(obase - SEV_GPU_WLC_LCIC_RESERVE_SIZE, PAGE_SIZE);
+}
+
+/*
+ * Per-client CE pushbuffer reserve. UVM's normal CC pushbuffer has a protected
+ * vidmem image and a UVM_PUSHBUFFER_SIZE (16 MiB) unprotected sysmem image. The
+ * client CPU writes encrypted CE pushes into the latter and the manager GPU's
+ * WLC reads those exact bytes, so a manager-local allocation is not sufficient.
+ *
+ * Keep the transport-side constant independent of nvidia-uvm headers, and let
+ * nvidia-uvm validate it against UVM_PUSHBUFFER_SIZE when importing the band.
+ * The band sits immediately below WLC/LCIC and therefore also below the OS
+ * descriptor, compute, and RPC reserves.
+ */
+#define SEV_GPU_CE_PUSHBUFFER_SIZE	(16UL * 1024 * 1024)
+
+static inline u64 ce_pushbuffer_reserve_base(size_t mem_size)
+{
+	u64 wbase = wlc_lcic_reserve_base(mem_size);
+
+	if (!wbase || wbase <= SEV_GPU_CE_PUSHBUFFER_SIZE)
+		return 0;
+	return ALIGN_DOWN(wbase - SEV_GPU_CE_PUSHBUFFER_SIZE, PAGE_SIZE);
 }
 
 #endif /* SEV_GPU_REGIONS_H */

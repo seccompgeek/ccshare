@@ -147,6 +147,9 @@ struct sev_gpu_dev {
 	                              * manager serviced for this client region. A
 	                              * mismatch vs header db_seq == new compute
 	                              * doorbell to mirror. */
+	phys_addr_t user_mmio_start;  /* client full-page SNP #VC allowlist range */
+	size_t user_mmio_size;
+	bool user_mmio_registered;
 	int  nvectors;
 	struct sev_gpu_irq irqctx[IVSHMEM_NUM_VECTORS];
 	u64 request_off;
@@ -186,6 +189,28 @@ struct sev_gpu_dev {
  */
 #define sev_gpu_data_dev sev_gpu_dev
 
+/*
+ * The unified channel stores its control and data protocol headers in the same
+ * metadata page. Keep all data-header users on the reserved non-zero slot so
+ * none can accidentally interpret or overwrite the control header at offset 0.
+ */
+static inline size_t sev_gpu_data_header_off(struct sev_gpu_data_dev *dd)
+{
+	return dd && dd->pdev && dd->pdev->device == SEV_CH_DEVICE_ID ?
+		SEV_GPU_DATA_HEADER_OFF : 0;
+}
+
+static inline void __iomem *sev_gpu_data_header_ptr(struct sev_gpu_data_dev *dd)
+{
+	size_t off = sev_gpu_data_header_off(dd);
+
+	if (!dd || !dd->mem ||
+	    dd->mem_size < off + sizeof(sev_gpu_data_header_t))
+		return NULL;
+
+	return (u8 __iomem *)dd->mem + off;
+}
+
 /* The one control device (defined in sev_gpu_main.c). */
 extern struct sev_gpu_dev *ctrl_dev;
 
@@ -207,6 +232,58 @@ extern u32 bringup_ncand[SEV_GPU_MAX_VMS];
 extern u64 bringup_userd_cand[SEV_GPU_MAX_VMS][SEV_GPU_BRINGUP_MAX_CAND];
 extern u32 bringup_cand_lastput[SEV_GPU_MAX_VMS][SEV_GPU_BRINGUP_MAX_CAND];
 extern u32 bringup_cand_lastget[SEV_GPU_MAX_VMS][SEV_GPU_BRINGUP_MAX_CAND];
+
+/*
+ * Resolve the sole data region attached to a client VM. Under sev-channel the
+ * local device is stored at data_devs[client_vm_id], not necessarily index 0.
+ * Keep the index-0 fallback for the legacy split control/data topology.
+ */
+static inline struct sev_gpu_data_dev *
+sev_gpu_client_data_dev(struct sev_gpu_dev *d)
+{
+	struct sev_gpu_data_dev *dd;
+	u8 vm;
+
+	if (!d || d->is_manager)
+		d = READ_ONCE(ctrl_dev);
+	if (d && !d->is_manager) {
+		/*
+		 * Under sev-channel the control device is also this client's data
+		 * device, so it is authoritative. Do not let a stale/legacy registry
+		 * entry at data_devs[client_vm_id] redirect a client away from its own
+		 * mapped BAR2.
+		 */
+		if (d->pdev && d->pdev->device == SEV_CH_DEVICE_ID)
+			return d;
+
+		vm = READ_ONCE(d->client_vm_id);
+		if (vm < SEV_GPU_MAX_VMS) {
+			dd = READ_ONCE(data_devs[vm]);
+			if (dd && dd->mem && dd->mem_size)
+				return dd;
+		}
+	}
+
+	return READ_ONCE(data_devs[0]);
+}
+
+/*
+ * Resolve the BAR2 carrying control mailboxes for @vm. The legacy transport
+ * has one shared control BAR, while sev-channel has one BAR2 per client.
+ */
+static inline struct sev_gpu_dev *sev_gpu_mailbox_dev(u8 vm)
+{
+	struct sev_gpu_dev *d = READ_ONCE(ctrl_dev);
+
+	if (!d || vm >= SEV_GPU_MAX_VMS)
+		return NULL;
+	if (!d->pdev || d->pdev->device != SEV_CH_DEVICE_ID)
+		return d;
+	if (!d->is_manager)
+		return d;
+
+	return READ_ONCE(data_devs[vm]);
+}
 
 /* manager device + GPU identity + per-client channel setup state. */
 extern bool manager;

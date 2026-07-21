@@ -144,14 +144,16 @@ typedef struct {
  * client's bytes -- the isolation is enforced by the hypervisor, not by the
  * guest kernel.
  *
- * The region begins with this header (one page); the AES-GCM staging payload
- * follows at SEV_GPU_DATA_HEADER_SIZE. Manager and client coordinate over the
- * private region via the state word (NAPI-style: a single doorbell "kick" on
- * the shared control plane, then poll this header until the state advances).
+ * The first page is shared protocol metadata. Under the unified sev-channel
+ * transport it contains both sev_gpu_shmem_header_t at offset zero and this
+ * data header at SEV_GPU_DATA_HEADER_OFF. The AES-GCM staging payload follows
+ * at SEV_GPU_DATA_HEADER_SIZE. Manager and client coordinate via the state word
+ * (NAPI-style: a single doorbell "kick", then poll until the state advances).
  */
 #define SEV_GPU_DATA_MAGIC        0xDA7A5EF6CAFEF00DULL
 #define SEV_GPU_DATA_VERSION      1
-#define SEV_GPU_DATA_HEADER_SIZE  4096                    /* payload starts here */
+#define SEV_GPU_DATA_HEADER_OFF   0x200UL                 /* after control header */
+#define SEV_GPU_DATA_HEADER_SIZE  4096                    /* metadata page size   */
 #define SEV_GPU_DATA_REGION_DEFAULT (64UL * 1024 * 1024)  /* default region size */
 #define SEV_GPU_DATA_OWNER_NONE   0xFFFFFFFFU             /* unbound / free slot  */
 
@@ -314,10 +316,10 @@ typedef struct {
 /*
  * Per-VM PRIVATE data device ioctls (on /dev/sev_gpu_dataN).
  *
- * Each private data region is a separate ivshmem-plain device. Userspace mmaps
- * the WHOLE device (offset 0): the first page is the sev_gpu_data_header_t, the
- * payload follows at payload_off. No offset bounding is needed -- the region is
- * already hardware-isolated to this VM (+ the manager) by QEMU.
+ * Userspace mmaps the whole per-client region at offset zero. The first page is
+ * protocol metadata, including sev_gpu_data_header_t at
+ * SEV_GPU_DATA_HEADER_OFF; payload follows at payload_off. The region is already
+ * hardware-isolated to this VM (+ the manager) by QEMU.
  */
 
 /* Query a private data region's geometry + current binding/state. */
@@ -921,7 +923,7 @@ typedef struct {
  * for a channel WITHOUT any cross-VM exchange. The client uses @enc_off to write
  * its AES-256-GCM ciphertext (at @enc_off) and auth tag (at @enc_off + 4096, one
  * page later) into its PRIVATE data region before requesting a WLC launch.
- * Computed against this node's own data region (data_devs[0]); intended for the
+ * Computed against this node's own local data region; intended for the
  * client role. Does not read the manager's assignment registry.
  */
 typedef struct {

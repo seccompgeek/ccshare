@@ -22,6 +22,7 @@
 u64 sev_gpu_shadow_db_impl(u32 client_id)
 {
 	struct sev_gpu_data_dev *dd;
+	void __iomem *data_hdr;
 	u64 off, client_phys = 0;
 
 	if ((u32)client_id >= (u32)num_data_devs)
@@ -41,11 +42,15 @@ u64 sev_gpu_shadow_db_impl(u32 client_id)
 
 	/* Fallback: legacy path – client wrote its GPA into the shared data
 	 * header directly (only works when both sides map the same file). */
-	if (!client_phys)
+	if (!client_phys) {
+		data_hdr = sev_gpu_data_header_ptr(dd);
+		if (!data_hdr)
+			return 0;
 		memcpy_fromio(&client_phys,
-			      (u8 __iomem *)dd->mem +
-			      offsetof(sev_gpu_data_header_t, client_mem_phys),
-			      sizeof(client_phys));
+				      (u8 __iomem *)data_hdr +
+				      offsetof(sev_gpu_data_header_t, client_mem_phys),
+				      sizeof(client_phys));
+	}
 
 	if (!client_phys) {
 		pr_warn_ratelimited("sev_gpu: shadow_db: client_mem_phys not yet published for VM%u\n",

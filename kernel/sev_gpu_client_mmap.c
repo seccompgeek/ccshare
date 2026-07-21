@@ -29,6 +29,70 @@ static void (*ud_window_unregister_fn)(void);
 extern void sev_gpu_register_ud_window(int (*fn)(u64 *base, u64 *size));
 extern void sev_gpu_unregister_ud_window(void);
 
+/* Optional API provided by the patched SNP guest kernel. Keep this module
+ * loadable on non-SNP and unpatched kernels by resolving it dynamically. */
+extern int sev_snp_register_user_mmio_range(phys_addr_t start, size_t size);
+extern void sev_snp_unregister_user_mmio_range(phys_addr_t start, size_t size);
+
+int sev_gpu_client_register_user_mmio(struct sev_gpu_dev *d)
+{
+	int (*register_range)(phys_addr_t start, size_t size);
+	u64 off;
+	phys_addr_t start;
+	int ret;
+
+	if (!d || d->is_manager || !d->shmem_phys || !d->shmem_size)
+		return -EINVAL;
+
+	off = compute_doorbell_off(d->shmem_size);
+	if (!off || off + SEV_GPU_MM_DOORBELL_SIZE > d->shmem_size)
+		return -ERANGE;
+	start = d->shmem_phys + off;
+
+	register_range = symbol_get(sev_snp_register_user_mmio_range);
+	if (!register_range) {
+		pr_warn("sev_gpu: SNP user-MMIO range API absent; userspace doorbell trap will SIGBUS\n");
+		return -EOPNOTSUPP;
+	}
+
+	ret = register_range(start, SEV_GPU_MM_DOORBELL_SIZE);
+	symbol_put(sev_snp_register_user_mmio_range);
+	if (ret) {
+		pr_err("sev_gpu: failed to register SNP user-MMIO range [0x%llx-0x%llx): %d\n",
+			(unsigned long long)start,
+			(unsigned long long)(start + SEV_GPU_MM_DOORBELL_SIZE), ret);
+		return ret;
+	}
+
+	d->user_mmio_start = start;
+	d->user_mmio_size = SEV_GPU_MM_DOORBELL_SIZE;
+	d->user_mmio_registered = true;
+	pr_info("sev_gpu: registered full usermode MMIO trap range [0x%llx-0x%llx)\n",
+		(unsigned long long)start,
+		(unsigned long long)(start + SEV_GPU_MM_DOORBELL_SIZE));
+	return 0;
+}
+
+void sev_gpu_client_unregister_user_mmio(struct sev_gpu_dev *d)
+{
+	void (*unregister_range)(phys_addr_t start, size_t size);
+
+	if (!d || !d->user_mmio_registered)
+		return;
+
+	unregister_range = symbol_get(sev_snp_unregister_user_mmio_range);
+	if (unregister_range) {
+		unregister_range(d->user_mmio_start, d->user_mmio_size);
+		symbol_put(sev_snp_unregister_user_mmio_range);
+	} else {
+		pr_warn("sev_gpu: SNP user-MMIO unregister API disappeared\n");
+	}
+
+	d->user_mmio_registered = false;
+	d->user_mmio_start = 0;
+	d->user_mmio_size = 0;
+}
+
 /*
  * A2: report this client's shadow usermode-doorbell aperture so nvidia.ko can
  * set nv->ud. Base = client data-region BAR2 GPA + compute_doorbell_off; size =
@@ -42,7 +106,7 @@ int sev_gpu_ud_window_impl(u64 *base, u64 *size)
 
 	if (!base || !size)
 		return -EINVAL;
-	dd = data_devs[0];
+	dd = sev_gpu_client_data_dev(ctrl_dev);
 	if (!dd || !dd->mem_phys || !dd->mem_size)
 		return -ENODEV;
 	off = compute_doorbell_off(dd->mem_size);
@@ -86,7 +150,7 @@ int sev_gpu_mmap_redirect_impl(u64 phys, u64 size, unsigned long *pfn_out)
 		return -ENOENT;
 	}
 
-	dd = data_devs[0];
+	dd = sev_gpu_client_data_dev(ctrl_dev);
 	if (!dd || !dd->mem_phys || !dd->mem_size)
 		return -ENOENT;
 
@@ -133,7 +197,7 @@ void mmap_client_bind_nvidia(void)
 	 * Phase A (A2): register the UD-window provider so nvidia.ko can set
 	 * nv->ud on the client (making native IS_UD_OFFSET classify the doorbell
 	 * mapping). The window is this client's shadow usermode aperture:
-	 * data_devs[0]->mem_phys + compute_doorbell_off(mem_size), 64 KiB.
+	 * local_data_dev->mem_phys + compute_doorbell_off(mem_size), 64 KiB.
 	 */
 	{
 		void (*reg_ud)(int (*fn)(u64 *base, u64 *size)) =

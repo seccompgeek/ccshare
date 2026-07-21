@@ -179,11 +179,14 @@ u32 sev_gpu_rm_forward(u32 cmd, void *arg, u32 size)
 	 * points the RM at the staged bytes in place, so no copy happens on the
 	 * manager side -- only the unavoidable copy_{from,to}_user below.
 	 */
-	dd = (num_data_devs > 0) ? data_devs[0] : NULL;
+	dd = sev_gpu_client_data_dev(ctrl_dev);
 	stage_base = (dd && dd->mem) ? rpc_staging_base(dd->mem_size) : 0;
 	if (ndesc > 0 && !stage_base) {
-		pr_warn_ratelimited("sev_gpu: RM-RPC no data region for nested cmd=0x%x\n",
-				    cmd);
+		pr_warn_ratelimited("sev_gpu: RM-RPC no data region for nested cmd=0x%x vm=%u dd=%s local=%d mapped=%d size=%zu num_data=%d\n",
+				    cmd, ctrl_dev ? ctrl_dev->client_vm_id : 0xFF,
+				    dd ? "present" : "absent", dd == ctrl_dev,
+				    dd && dd->mem, dd ? dd->mem_size : 0,
+				    READ_ONCE(num_data_devs));
 		return RPC_FWD_ERR;
 	}
 
@@ -247,11 +250,12 @@ u32 sev_gpu_rm_forward(u32 cmd, void *arg, u32 size)
 	 */
 	if (dd && dd->mem && dd->mem_phys) {
 		static bool client_phys_published;
+		void __iomem *data_hdr = sev_gpu_data_header_ptr(dd);
 
-		if (!READ_ONCE(client_phys_published)) {
+		if (data_hdr && !READ_ONCE(client_phys_published)) {
 			u64 phys = (u64)dd->mem_phys;
 
-			memcpy_toio((u8 __iomem *)dd->mem +
+			memcpy_toio((u8 __iomem *)data_hdr +
 				    offsetof(sev_gpu_data_header_t, client_mem_phys),
 				    &phys, sizeof(phys));
 			wmb();
@@ -639,7 +643,7 @@ out:
  */
 long sev_gpu_rpc_client_call(struct sev_gpu_dev *d, void __user *argp)
 {
-	struct sev_gpu_data_dev *dd = data_devs[0];	/* client: single region */
+	struct sev_gpu_data_dev *dd = sev_gpu_client_data_dev(d);
 	sev_gpu_ioctl_rpc_test_t *t;
 	sev_gpu_rpc_slot_t *slot;
 	void __iomem *mb;

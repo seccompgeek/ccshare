@@ -546,6 +546,7 @@ case "${1:-test}" in
         #   $0 nvidia build      - make modules SYSSRC=<running-kernel build>
         #   $0 nvidia load          - insmod nvidia.ko (+uvm), create device nodes
         #   $0 nvidia load client   - same but with NVreg_SEVClientMode=1 (no GPU)
+        #   $0 nvidia reload [role] - reload sev_gpu + NVIDIA in dependency order
         #   $0 nvidia unload        - rmmod the nvidia modules
         #   $0 nvidia status        - lsmod + nvidia-smi + /dev/nvidia*
         SUB="${2:-status}"
@@ -565,6 +566,21 @@ case "${1:-test}" in
                 make modules SYSSRC="$KBUILD_DIR" -j"$(nproc)"
                 echo "[+] Built:"
                 ls -lh kernel-open/*.ko 2>/dev/null
+                ;;
+            reload)
+                ROLE="${3:-manager}"
+                if [ "$ROLE" != "manager" ] && [ "$ROLE" != "client" ]; then
+                    echo "Usage: $0 nvidia reload [manager|client]"
+                    exit 2
+                fi
+
+                echo "[*] Reloading the SEV/NVIDIA stack as $ROLE..."
+                "$0" unload
+                "$0" nvidia unload
+                "$0" nvidia build
+                "$0" nvidia load "$ROLE"
+                "$0" load "$ROLE"
+                echo "[+] SEV/NVIDIA stack reloaded as $ROLE"
                 ;;
             load)
                 cd "$NVIDIA_DIR"
@@ -617,6 +633,12 @@ case "${1:-test}" in
                 for m in nvidia_uvm nvidia_drm nvidia_modeset nvidia_peermem nvidia; do
                     lsmod | grep -q "^$m" && sudo rmmod "$m" 2>/dev/null || true
                 done
+                if lsmod | grep -q '^nvidia'; then
+                    echo "[-] Some NVIDIA modules are still in use:" >&2
+                    lsmod | grep '^nvidia' >&2
+                    echo "    Stop their users and unload sev_gpu before retrying." >&2
+                    exit 1
+                fi
                 echo "[+] Done."
                 lsmod | grep -E '^nvidia' || echo "    nvidia: not loaded"
                 ;;
@@ -625,7 +647,7 @@ case "${1:-test}" in
                 echo "[*] /dev/nvidia*:"; ls -l /dev/nvidia* 2>/dev/null || echo "    none"
                 command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi 2>&1 | head -15
                 ;;
-            *) echo "Usage: $0 nvidia build|load|unload|status"; exit 2 ;;
+            *) echo "Usage: $0 nvidia build|load|reload|unload|status"; exit 2 ;;
         esac
         ;;
 
@@ -995,7 +1017,7 @@ Commands:
                   - GPU stage 1: provision CC channel(s) on the REAL GPU via
                     nvidia.ko (rm_sev_gpu_alloc_cc_channel -> CeUtils). Manager
                     VM with nvidia.ko + a bound GPU. -ENODEV = allocator unbound.
-    nvidia build|load|unload|status
+    nvidia build|load|reload|unload|status
                   - Build/load/unload the patched NVIDIA open GPU driver in the
                     guest (manager VM only). 'build' = make modules against the
                     running kernel; 'load' = insmod nvidia(+uvm) + device nodes.

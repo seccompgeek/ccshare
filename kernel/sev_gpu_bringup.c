@@ -92,6 +92,30 @@ void sev_gpu_bringup_disarm(u32 vm)
 	}
 }
 
+/* Retire all process-owned replay channels and USERD candidates for one VM. */
+void sev_gpu_bringup_reset(u32 vm)
+{
+	if (vm >= SEV_GPU_MAX_VMS)
+		return;
+
+	/* Publish empty counts first so the poller cannot consume stale handles. */
+	WRITE_ONCE(bringup_watch[vm].active, false);
+	WRITE_ONCE(bringup_nch[vm], 0);
+	WRITE_ONCE(bringup_ncand[vm], 0);
+	smp_wmb();
+
+	memset(&bringup_watch[vm], 0, sizeof(bringup_watch[vm]));
+	memset(bringup_ch[vm], 0, sizeof(bringup_ch[vm]));
+	memset(bringup_userd_cand[vm], 0,
+	       sizeof(bringup_userd_cand[vm]));
+	memset(bringup_cand_lastput[vm], 0,
+	       sizeof(bringup_cand_lastput[vm]));
+	memset(bringup_cand_lastget[vm], 0,
+	       sizeof(bringup_cand_lastget[vm]));
+
+	pr_info("sev_gpu: reset replay bring-up state for VM%u\n", vm);
+}
+
 void bringup_all(void)
 {
 	u32 vm;

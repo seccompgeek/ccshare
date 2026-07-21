@@ -374,6 +374,10 @@ typedef u32 (*sev_gpu_client_post_event_t)(u32 h_event_client,
 					  u16 info16,
 					  u8 data_valid);
 
+/* nvidia.ko reports this only after a tuple posted successfully and its local
+ * nv_event_t was subsequently retired during file teardown. */
+#define SEV_GPU_EVENT_POST_RETIRED 0xfffffffdu
+
 static DEFINE_SPINLOCK(event_ring_lock);
 static bool event_ring_ready[SEV_GPU_MAX_VMS];
 static sev_gpu_client_post_event_t client_event_post_fn;
@@ -515,7 +519,10 @@ int sev_gpu_event_drain(struct sev_gpu_dev *d)
 		status = post(h_event_client, h_event, event_fd, notify_index,
 			      info32, (u16)packed,
 			      !!(packed & SEV_GPU_EVENT_DATA_VALID));
-		if (status)
+		if (status == SEV_GPU_EVENT_POST_RETIRED)
+			pr_debug_ratelimited("sev_gpu: dropped completion for retired client OS event hClient=0x%x hEvent=0x%x fd=%u\n",
+					     h_event_client, h_event, event_fd);
+		else if (status)
 			pr_err_ratelimited("sev_gpu: client OS-event post failed status=0x%x hClient=0x%x hEvent=0x%x fd=%u\n",
 					   status, h_event_client, h_event, event_fd);
 		else
@@ -694,8 +701,6 @@ int sev_gpu_compute_carve(struct sev_gpu_data_dev *dd, u32 idx,
  *   rs_access.h          RS_ACCESS_MASK (1 x NvU32 limb)
  * All offsets are LP64 with NvP64 8-byte aligned (the SDK uses NV_ALIGN_BYTES(8)).
  */
-#define RPC_NV_ESC_RM_FREE	0x29u
-
 /*
  * One nested pointer found inside a top-level escape struct: the 8-byte NvP64
  * field at @ptr_off references @size bytes that must be deep-copied in @dir.

@@ -22,6 +22,7 @@ enum rpc_ctrl_disp {
 
 #define RPC_NV_ESC_RM_CONTROL	0x2Au
 #define RPC_NV_ESC_RM_ALLOC	0x2Bu
+#define RPC_NV_ESC_RM_FREE	0x29u
 
 #define RPC_NVOS54_PARAMS_OFF		16u	/* NVOS54_PARAMETERS.params      */
 #define RPC_NVOS54_PARAMSSIZE_OFF	24u	/* NVOS54_PARAMETERS.paramsSize  */

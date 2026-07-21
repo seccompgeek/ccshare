@@ -170,6 +170,7 @@ void sev_gpu_osdesc_reset_impl(u32 client_id)
 
 	mutex_lock(&reg_lock);
 	osdesc_carve_cursor[client_id] = 0;
+	WRITE_ONCE(osdesc_2m_off[client_id], 0);
 	WRITE_ONCE(userd_2m_off[client_id], 0);
 	mutex_unlock(&reg_lock);
 

@@ -1065,6 +1065,23 @@ void rpc_service_slot(u8 vm, sev_gpu_rpc_slot_t *slot)
 	slot->ret = 0;
 
 	/*
+	 * RM root lifetime normally ends when nvidiactl closes. The client mirrors
+	 * that edge as FREE(root, root); once RM accepts it, discard only the
+	 * process-owned doorbell/USERD watch state. Per-VM UVM pools and transport
+	 * authentication deliberately survive for the next CUDA process.
+	 */
+	if (slot->cmd == RPC_NV_ESC_RM_FREE && size >= 16 &&
+	    slot->rm_status == 0) {
+		u32 hroot = 0, hold = 0, op_status = 0;
+
+		memcpy(&hroot, slot->inline_arg + 0, 4);
+		memcpy(&hold, slot->inline_arg + 8, 4);
+		memcpy(&op_status, slot->inline_arg + 12, 4);
+		if (hroot != 0 && hold == hroot && op_status == 0)
+			sev_gpu_bringup_reset(vm);
+	}
+
+	/*
 	 * SEV-DIAG: GET_WORK_SUBMIT_TOKEN (0xc36f0108) leaves a single 4-byte OUT
 	 * param -- the token libcuda writes to the usermode doorbell (+0x90). Read
 	 * it from the SHARED staging slot the RM just wrote in place: this is the

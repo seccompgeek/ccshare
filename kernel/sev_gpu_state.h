@@ -302,6 +302,7 @@ int sev_gpu_compute_carve(struct sev_gpu_data_dev *dd, u32 idx,
 /* bring-up watcher (defined in main). */
 void sev_gpu_bringup_arm(u32 vm, u32 h_client, u32 h_channel);
 void sev_gpu_bringup_disarm(u32 vm);
+void sev_gpu_bringup_reset(u32 vm);
 bool sev_gpu_bringup_poll(void);
 void bringup_all(void);
 
